@@ -1,23 +1,3 @@
-<<<<<<< HEAD
-# STRAKON SMD Viewer V1
-
-Experimental browser-based 3D viewer for the currently reverse-engineered STRAKON SMD subset:
-
-- `"DICAD ASC"` files
-- one main `#10125` geometry block
-- explicit BREP geometry containing vertices, polygon faces, plane equations, and face names
-- optional confirmed 3x4 transform used by the plain-column sample
-
-V1 intentionally does **not** interpret reinforcement, BIP, special meshes, or arbitrary STRAKON blocks.
-
-## Prerequisites
-
-Install:
-
-1. **Node.js 22 LTS** (Node 20.19+ should also work with current Vite releases, but Node 22 LTS is recommended).
-2. npm (included with Node.js).
-3. Optional: Visual Studio Code.
-
 Check installation in PowerShell:
 
 ```powershell
