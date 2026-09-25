@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # STRAKON SMD Viewer V1
 
 Experimental browser-based 3D viewer for the currently reverse-engineered STRAKON SMD subset:
@@ -110,3 +111,6 @@ Expected:
 ## Important limitation
 
 This is a reverse-engineered Viewer V1, not an official STRAKON/DICAD format implementation. Unsupported geometry should produce an error rather than be guessed.
+=======
+# smdviewer
+>>>>>>> origin/main
