@@ -13,7 +13,7 @@ app.innerHTML = `
     <header class="toolbar">
       <div>
         <div class="brand">STRAKON SMD Viewer <span>V1</span></div>
-        <div class="subtitle">DICAD ASC + #10125 explicit BREP viewer</div>
+        <div class="subtitle">DICAD ASC explicit BREP viewer</div>
       </div>
       <div class="toolbar-actions">
         <label class="button primary">
@@ -42,8 +42,8 @@ app.innerHTML = `
 
         <section class="panel notes">
           <h2>V1 scope</h2>
-          <p>Supported: DICAD ASC files containing a #10125 object with explicit vertices, faces, planes and face names.</p>
-          <p>Other STRAKON blocks are intentionally not interpreted yet.</p>
+          <p>Experimental subject selection: if the SMD header names a source KON, V1 prefers a BREP object whose designation matches the drawing designation.</p>
+          <p>Otherwise the original #10125 fallback remains in use.</p>
         </section>
       </aside>
 
@@ -106,8 +106,9 @@ function updateInfo(parsed: ParsedSmd, sourceName: string): void {
   objectInfo.innerHTML = `
     <dt>File</dt><dd>${esc(sourceName)}</dd>
     <dt>Format</dt><dd>DICAD ASC</dd>
-    <dt>Block</dt><dd>#10125</dd>
+    <dt>Block</dt><dd>${esc(parsed.geometryBlockTag)}</dd>
     <dt>Name</dt><dd>${esc(g.name)}</dd>
+    <dt>Designation</dt><dd>${esc(g.designation ?? parsed.documentDesignation)}</dd>
     <dt>Object ID</dt><dd class="mono">${esc(g.objectId)}</dd>
     <dt>Teilart</dt><dd>${esc(g.partType)}</dd>
   `;

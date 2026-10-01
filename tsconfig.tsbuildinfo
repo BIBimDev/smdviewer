@@ -1,0 +1,1 @@
+{"root":["./src/main.ts","./src/smd/brepdetector.ts","./src/smd/parser10125.ts","./src/smd/tokenizer.ts","./src/smd/transform.ts","./src/smd/types.ts","./src/viewer/renderer.ts","./src/viewer/triangulation.ts"],"version":"5.9.3"}

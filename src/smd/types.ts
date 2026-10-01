@@ -52,6 +52,7 @@ export interface ParsedBrep {
 export interface Smd10125Geometry {
   objectId?: string;
   name?: string;
+  designation?: string;
   partType?: number;
   profileEdges: ProfileEdge[];
   placementOrigin?: Vec3;
@@ -64,6 +65,8 @@ export interface ParsedSmd {
   isDicadAsc: boolean;
   headerLines: string[];
   geometryBlockLines: string[];
+  geometryBlockTag: string;
+  documentDesignation?: string;
   geometry: Smd10125Geometry;
 }
 

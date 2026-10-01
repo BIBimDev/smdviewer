@@ -212,6 +212,6 @@ export function detectBrep(tokens: Token[]): ParsedBrep {
   }
 
   throw new Error(
-    "No supported explicit BREP was found in #10125. Viewer V1 currently expects vertices + faces + planes + face names.",
+    "No supported explicit BREP was found in the selected object block. Viewer V1 currently expects vertices + faces + planes + face names.",
   );
 }
