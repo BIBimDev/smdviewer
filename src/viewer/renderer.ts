@@ -3,12 +3,108 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { ParsedSmd, Vec3 } from "../smd/types";
 import { triangulateFace } from "./triangulation";
 
+export interface ViewerInteractionHandlers {
+  onVertexHover?: (vertexIndex: number | null) => void;
+  onFaceHover?: (faceIndex: number | null) => void;
+  onFaceSelect?: (faceIndex: number | null) => void;
+}
+
 export interface ViewerHandle {
   load(parsed: ParsedSmd): void;
   clear(): void;
   fit(): void;
   dispose(): void;
+  setVerticesVisible(visible: boolean): void;
+  setFaceSelectMode(enabled: boolean): void;
+  setFaceColors(enabled: boolean): void;
+  setHoveredVertex(vertexIndex: number | null): void;
+  setHoveredFace(faceIndex: number | null): void;
+  selectFace(faceIndex: number | null): void;
+  setInteractionHandlers(handlers: ViewerInteractionHandlers): void;
 }
+
+const DEFAULT_FACE_COLOR = 0xc9cdd2;
+const HOVER_FACE_COLOR = 0xffd166;
+const SELECTED_FACE_COLOR = 0xff8c42;
+const DEFAULT_VERTEX_COLOR = 0x2563eb;
+const HOVER_VERTEX_COLOR = 0xfacc15;
+const SELECTED_VERTEX_COLOR = 0xef4444;
+
+const FACE_PALETTE = [
+  0x8ecae6,
+  0xffb703,
+  0x90be6d,
+  0xf8961e,
+  0xb8c0ff,
+  0x43aa8b,
+  0xf28482,
+  0x84a59d,
+  0xcdb4db,
+  0x72a1e5,
+  0xf6bd60,
+  0xa8dadc,
+];
+
+function buildGeometry(parsed: ParsedSmd): THREE.BufferGeometry {
+  const vertices = parsed.geometry.brep.verticesWorld;
+  const positions: number[] = [];
+
+  for (const face of parsed.geometry.brep.faces) {
+    const triangles = triangulateFace(vertices, face);
+
+    for (const triangle of triangles) {
+      for (const vertexIndex of triangle) {
+        const v = vertices[vertexIndex];
+        positions.push(v.x, v.y, v.z);
+      }
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function buildFaceGeometry(parsed: ParsedSmd, faceIndex: number): THREE.BufferGeometry {
+  const vertices = parsed.geometry.brep.verticesWorld;
+  const face = parsed.geometry.brep.faces[faceIndex];
+  const triangles = triangulateFace(vertices, face);
+  const positions: number[] = [];
+
+  for (const triangle of triangles) {
+    for (const vertexIndex of triangle) {
+      const v = vertices[vertexIndex];
+      positions.push(v.x, v.y, v.z);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function makeGrid(size: number): THREE.GridHelper {
+  const safeSize = Math.max(size, 1000);
+  const divisions = 20;
+  const grid = new THREE.GridHelper(safeSize, divisions);
+  // Three.js GridHelper lies on XZ. STRAKON uses Z as vertical, so rotate to XY.
+  grid.rotation.x = Math.PI / 2;
+  return grid;
+}
+
+function formatCoordinate(value: number): string {
+  if (Math.abs(value - Math.round(value)) < 1e-6) {
+    return String(Math.round(value));
+  }
+  return value.toFixed(3);
+}
+
 
 function buildGeometry(parsed: ParsedSmd): THREE.BufferGeometry {
   const vertices = parsed.geometry.brep.verticesWorld;
