@@ -216,3 +216,11 @@ input {
     border-bottom: 1px solid #d7dde3;
   }
 }
+
+/* V1.0.1 development - active toolbar mode */
+
+.button.active {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
