@@ -5,6 +5,12 @@ import {
 } from
   "three/examples/jsm/controls/OrbitControls.js";
 
+import {
+  CSS2DObject,
+  CSS2DRenderer
+} from
+  "three/examples/jsm/renderers/CSS2DRenderer.js";
+
 import type {
   ParsedSmd,
   Vec3
@@ -30,6 +36,72 @@ export interface ViewerHandle {
   ): void;
 
   dispose(): void;
+}
+
+
+/**
+ * Format a coordinate for display.
+ *
+ * Integer-like values:
+ * 375
+ * -325
+ * 5000
+ *
+ * Decimal values:
+ * 1847.804
+ */
+function formatCoordinate(
+  value: number
+): string {
+
+  // Avoid displaying "-0".
+  if (
+    Math.abs(value) < 1e-9
+  ) {
+    value = 0;
+  }
+
+
+  const rounded =
+    Math.round(value);
+
+
+  if (
+    Math.abs(
+      value - rounded
+    ) < 1e-6
+  ) {
+
+    return String(
+      rounded
+    );
+
+  }
+
+
+  return value.toFixed(3);
+}
+
+
+/**
+ * Build the text displayed beside one vertex.
+ *
+ * Example:
+ *
+ * V8 (375, -325, 1847.804)
+ */
+function vertexLabelText(
+  index: number,
+  vertex: Vec3
+): string {
+
+  return (
+    `V${index} (` +
+    `${formatCoordinate(vertex.x)}, ` +
+    `${formatCoordinate(vertex.y)}, ` +
+    `${formatCoordinate(vertex.z)}` +
+    `)`
+  );
 }
 
 
@@ -127,9 +199,9 @@ function makeGrid(
     );
 
 
-  // Three.js GridHelper lies on XZ.
-  // STRAKON uses Z as vertical.
-  // Therefore rotate the grid to XY.
+  // Three.js GridHelper is created in XZ.
+  // STRAKON uses Z as vertical,
+  // therefore rotate to the XY plane.
 
   grid.rotation.x =
     Math.PI / 2;
@@ -256,6 +328,10 @@ export function createViewer(
   );
 
 
+  // -------------------------------------------------
+  // Main WebGL renderer
+  // -------------------------------------------------
+
   const renderer =
     new THREE.WebGLRenderer({
       antialias: true
@@ -272,6 +348,42 @@ export function createViewer(
 
   container.appendChild(
     renderer.domElement
+  );
+
+
+  // -------------------------------------------------
+  // CSS label renderer
+  //
+  // WebGLRenderer:
+  //   solid / edges / nodes
+  //
+  // CSS2DRenderer:
+  //   V0 (x,y,z) text
+  // -------------------------------------------------
+
+  const labelRenderer =
+    new CSS2DRenderer();
+
+
+  labelRenderer.domElement.className =
+    "vertex-label-layer";
+
+
+  labelRenderer.domElement.style.position =
+    "absolute";
+
+  labelRenderer.domElement.style.left =
+    "0";
+
+  labelRenderer.domElement.style.top =
+    "0";
+
+  labelRenderer.domElement.style.pointerEvents =
+    "none";
+
+
+  container.appendChild(
+    labelRenderer.domElement
   );
 
 
@@ -355,6 +467,14 @@ export function createViewer(
   let verticesVisible = false;
 
 
+  /**
+   * Remove the current vertex debug group.
+   *
+   * This includes:
+   *
+   * - blue node meshes
+   * - CSS2D coordinate labels
+   */
   function clearVertexRoot(): void {
 
     if (!vertexRoot) {
@@ -372,6 +492,8 @@ export function createViewer(
         object:
         THREE.Object3D
       ) => {
+
+        // Dispose the sphere nodes.
 
         if (
           object
@@ -400,6 +522,18 @@ export function createViewer(
             object.material.dispose();
 
           }
+
+        }
+
+
+        // Remove any HTML labels.
+
+        if (
+          object
+          instanceof CSS2DObject
+        ) {
+
+          object.element.remove();
 
         }
 
@@ -607,6 +741,23 @@ export function createViewer(
   }
 
 
+  /**
+   * Build:
+   *
+   * V0 dot
+   * V0 (x,y,z) label
+   *
+   * V1 dot
+   * V1 (x,y,z) label
+   *
+   * ...
+   *
+   * IMPORTANT:
+   * verticesWorld is used.
+   *
+   * This means BREP transforms have already
+   * been applied.
+   */
   function buildVertexNodes(
     parsed: ParsedSmd
   ): void {
@@ -655,6 +806,10 @@ export function createViewer(
         vertices[index];
 
 
+      // ---------------------------------------------
+      // Node / dot
+      // ---------------------------------------------
+
       const geometry =
         new THREE.SphereGeometry(
           radius,
@@ -696,13 +851,72 @@ export function createViewer(
 
 
       root.add(node);
+
+
+      // ---------------------------------------------
+      // Coordinate label
+      // ---------------------------------------------
+
+      const labelElement =
+        document.createElement(
+          "div"
+        );
+
+
+      labelElement.className =
+        "vertex-label";
+
+
+      labelElement.textContent =
+        vertexLabelText(
+          index,
+          vertex
+        );
+
+
+      labelElement.dataset.vertexIndex =
+        String(index);
+
+
+      const labelObject =
+        new CSS2DObject(
+          labelElement
+        );
+
+
+      labelObject.position.set(
+
+        vertex.x,
+
+        vertex.y,
+
+        vertex.z
+
+      );
+
+
+      labelObject.name =
+        `V${index}-label`;
+
+
+      labelObject.userData.vertexIndex =
+        index;
+
+
+      root.add(
+        labelObject
+      );
+
     }
 
 
-    vertexRoot = root;
+    vertexRoot =
+      root;
 
 
-    scene.add(root);
+    scene.add(
+      root
+    );
   }
 
 
@@ -743,7 +957,9 @@ export function createViewer(
       );
 
 
-    root.add(mesh);
+    root.add(
+      mesh
+    );
 
 
     const edgeGeometry =
@@ -766,20 +982,27 @@ export function createViewer(
       );
 
 
-    root.add(edges);
+    root.add(
+      edges
+    );
 
 
-    modelRoot = root;
+    modelRoot =
+      root;
 
 
-    scene.add(root);
+    scene.add(
+      root
+    );
 
 
-    // Day 1:
-    // Create one visible/debug node
-    // for every final/world BREP vertex.
+    // Build all BREP vertex dots and labels.
+    // They remain hidden until the toolbar
+    // button enables them.
 
-    buildVertexNodes(parsed);
+    buildVertexNodes(
+      parsed
+    );
 
 
     const box =
@@ -793,7 +1016,9 @@ export function createViewer(
       new THREE.Vector3();
 
 
-    box.getSize(size);
+    box.getSize(
+      size
+    );
 
 
     grid =
@@ -808,7 +1033,9 @@ export function createViewer(
       );
 
 
-    scene.add(grid);
+    scene.add(
+      grid
+    );
 
 
     fit();
@@ -823,7 +1050,9 @@ export function createViewer(
       visible;
 
 
-    if (vertexRoot) {
+    if (
+      vertexRoot
+    ) {
 
       vertexRoot.visible =
         visible;
@@ -853,6 +1082,12 @@ export function createViewer(
       width,
       height,
       false
+    );
+
+
+    labelRenderer.setSize(
+      width,
+      height
     );
 
 
@@ -892,7 +1127,15 @@ export function createViewer(
     controls.update();
 
 
+    // Render geometry.
     renderer.render(
+      scene,
+      camera
+    );
+
+
+    // Render coordinate labels.
+    labelRenderer.render(
       scene,
       camera
     );
@@ -934,6 +1177,9 @@ export function createViewer(
 
 
       renderer.domElement.remove();
+
+
+      labelRenderer.domElement.remove();
 
     }
 

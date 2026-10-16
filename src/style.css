@@ -224,3 +224,57 @@ input {
   background: #dbeafe;
   color: #1d4ed8;
 }
+
+/* =========================================================
+   V1.0.1
+   Vertex coordinate labels
+   ========================================================= */
+
+.vertex-label-layer {
+  position: absolute;
+  inset: 0;
+
+  overflow: hidden;
+
+  pointer-events: none;
+}
+
+
+.vertex-label {
+  padding: 2px 5px;
+
+  border: 1px solid rgba(37, 99, 235, 0.55);
+
+  border-radius: 3px;
+
+  background:
+    rgba(255, 255, 255, 0.94);
+
+  color: #1e3a8a;
+
+  font-family:
+    Consolas,
+    "Courier New",
+    monospace;
+
+  font-size: 11px;
+
+  line-height: 1.25;
+
+  white-space: nowrap;
+
+  pointer-events: none;
+
+  user-select: none;
+
+  box-shadow:
+    0 1px 3px
+    rgba(0, 0, 0, 0.14);
+
+  /*
+   * Move the label slightly away
+   * from the exact vertex position.
+   */
+  transform:
+    translate(8px, -8px);
+}
