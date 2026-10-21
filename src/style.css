@@ -278,3 +278,174 @@ input {
   transform:
     translate(8px, -8px);
 }
+
+
+/* =========================================================
+   V1.0.1 Day 3
+   Vertex Inspector Table
+   ========================================================= */
+
+
+.inspector-panel {
+  padding-bottom: 10px;
+}
+
+
+.inspector-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 8px;
+
+  margin-bottom: 8px;
+}
+
+
+.inspector-panel-title h2 {
+  margin: 0;
+}
+
+
+.inspector-badge {
+  display: inline-flex;
+
+  min-width: 24px;
+  height: 22px;
+
+  align-items: center;
+  justify-content: center;
+
+  padding: 0 7px;
+
+  border-radius: 999px;
+
+  background: #eef2f7;
+
+  color: #52606d;
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+.inspector-section-title {
+  margin-bottom: 6px;
+
+  color: #52606d;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  letter-spacing: 0.02em;
+
+  text-transform: uppercase;
+}
+
+
+.vertex-table-wrap {
+  max-height: 270px;
+
+  overflow: auto;
+
+  border: 1px solid #d8dee5;
+
+  border-radius: 5px;
+
+  background: #ffffff;
+}
+
+
+.inspector-table {
+  width: 100%;
+
+  border-collapse: collapse;
+
+  table-layout: fixed;
+
+  font-size: 11px;
+}
+
+
+.inspector-table th,
+.inspector-table td {
+  padding: 6px 7px;
+
+  border-bottom:
+    1px solid #e6ebf0;
+
+  text-align: right;
+
+  white-space: nowrap;
+}
+
+
+.inspector-table th:first-child,
+.inspector-table td:first-child {
+  text-align: left;
+}
+
+
+.inspector-table thead th {
+  position: sticky;
+
+  top: 0;
+
+  z-index: 1;
+
+  background: #f7f9fb;
+
+  color: #52606d;
+
+  font-size: 10px;
+  font-weight: 700;
+}
+
+
+.inspector-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+
+.vertex-row {
+  cursor: default;
+
+  transition:
+    background-color
+    100ms ease;
+}
+
+
+.vertex-row:hover,
+.vertex-row.is-hovered {
+  background: #dbeafe;
+}
+
+
+.vertex-row.is-hovered .vertex-id {
+  color: #1d4ed8;
+
+  font-weight: 700;
+}
+
+
+.vertex-id,
+.number-cell {
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+
+.empty-row td {
+  padding: 12px 8px;
+
+  text-align: center !important;
+
+  color: #7b8794;
+
+  white-space: normal;
+}

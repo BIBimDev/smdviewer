@@ -2,14 +2,12 @@ import * as THREE from "three";
 
 import {
   OrbitControls
-} from
-  "three/examples/jsm/controls/OrbitControls.js";
+} from "three/examples/jsm/controls/OrbitControls.js";
 
 import {
   CSS2DObject,
   CSS2DRenderer
-} from
-  "three/examples/jsm/renderers/CSS2DRenderer.js";
+} from "three/examples/jsm/renderers/CSS2DRenderer.js";
 
 import type {
   ParsedSmd,
@@ -35,72 +33,87 @@ export interface ViewerHandle {
     visible: boolean
   ): void;
 
+  /*
+   * Table -> 3D
+   */
+  setHoveredVertex(
+    index: number | null
+  ): void;
+
+  /*
+   * 3D -> table
+   */
+  setVertexHoverHandler(
+    handler:
+      (
+        index: number | null
+      ) => void
+  ): void;
+
   dispose(): void;
 }
 
 
-/**
- * Format a coordinate for display.
- *
- * Integer-like values:
- * 375
- * -325
- * 5000
- *
- * Decimal values:
- * 1847.804
- */
+const DEFAULT_VERTEX_COLOR =
+  0x2563eb;
+
+
+const HOVER_VERTEX_COLOR =
+  0xf59e0b;
+
+
+type VertexNode =
+  THREE.Mesh<
+    THREE.SphereGeometry,
+    THREE.MeshBasicMaterial
+  >;
+
+
 function formatCoordinate(
   value: number
 ): string {
 
-  // Avoid displaying "-0".
-  if (
+  const normalized =
     Math.abs(value) < 1e-9
-  ) {
-    value = 0;
-  }
+      ? 0
+      : value;
 
 
   const rounded =
-    Math.round(value);
+    Math.round(normalized);
 
 
   if (
     Math.abs(
-      value - rounded
+      normalized - rounded
     ) < 1e-6
   ) {
 
     return String(
       rounded
     );
-
   }
 
 
-  return value.toFixed(3);
+  return normalized.toFixed(3);
 }
 
 
-/**
- * Build the text displayed beside one vertex.
- *
- * Example:
- *
- * V8 (375, -325, 1847.804)
- */
 function vertexLabelText(
   index: number,
   vertex: Vec3
 ): string {
 
   return (
+
     `V${index} (` +
+
     `${formatCoordinate(vertex.x)}, ` +
+
     `${formatCoordinate(vertex.y)}, ` +
-    `${formatCoordinate(vertex.z)}` +
-    `)`
+
+    `${formatCoordinate(vertex.z)})`
+
   );
 }
 
@@ -110,14 +123,23 @@ function buildGeometry(
 ): THREE.BufferGeometry {
 
   const vertices =
-    parsed.geometry.brep.verticesWorld;
+    parsed
+      .geometry
+      .brep
+      .verticesWorld;
 
-  const positions: number[] = [];
+
+  const positions:
+    number[] =
+    [];
 
 
   for (
     const face of
-    parsed.geometry.brep.faces
+    parsed
+      .geometry
+      .brep
+      .faces
   ) {
 
     const triangles =
@@ -132,23 +154,26 @@ function buildGeometry(
     ) {
 
       for (
-        const vertexIndex
-        of triangle
+        const vertexIndex of triangle
       ) {
 
-        const v =
-          vertices[vertexIndex];
+        const vertex =
+          vertices[
+            vertexIndex
+          ];
+
 
         positions.push(
-          v.x,
-          v.y,
-          v.z
+
+          vertex.x,
+
+          vertex.y,
+
+          vertex.z
+
         );
-
       }
-
     }
-
   }
 
 
@@ -189,20 +214,21 @@ function makeGrid(
       1000
     );
 
-  const divisions = 20;
-
 
   const grid =
     new THREE.GridHelper(
       safeSize,
-      divisions
+      20
     );
 
 
-  // Three.js GridHelper is created in XZ.
-  // STRAKON uses Z as vertical,
-  // therefore rotate to the XY plane.
-
+  /*
+   * GridHelper starts in XZ.
+   *
+   * STRAKON uses Z-up,
+   * therefore rotate grid
+   * into XY.
+   */
   grid.rotation.x =
     Math.PI / 2;
 
@@ -220,7 +246,6 @@ function getModelSize(
   ) {
 
     return 1000;
-
   }
 
 
@@ -273,7 +298,6 @@ function getModelSize(
         maxZ,
         vertex.z
       );
-
   }
 
 
@@ -302,6 +326,12 @@ export function createViewer(
   );
 
 
+  /*
+   * =================================================
+   * Scene
+   * =================================================
+   */
+
   const scene =
     new THREE.Scene();
 
@@ -328,9 +358,11 @@ export function createViewer(
   );
 
 
-  // -------------------------------------------------
-  // Main WebGL renderer
-  // -------------------------------------------------
+  /*
+   * =================================================
+   * WebGL Renderer
+   * =================================================
+   */
 
   const renderer =
     new THREE.WebGLRenderer({
@@ -339,10 +371,12 @@ export function createViewer(
 
 
   renderer.setPixelRatio(
+
     Math.min(
       window.devicePixelRatio,
       2
     )
+
   );
 
 
@@ -351,34 +385,52 @@ export function createViewer(
   );
 
 
-  // -------------------------------------------------
-  // CSS label renderer
-  //
-  // WebGLRenderer:
-  //   solid / edges / nodes
-  //
-  // CSS2DRenderer:
-  //   V0 (x,y,z) text
-  // -------------------------------------------------
+  /*
+   * =================================================
+   * CSS2D label renderer
+   * =================================================
+   */
 
   const labelRenderer =
     new CSS2DRenderer();
 
 
-  labelRenderer.domElement.className =
+  labelRenderer
+    .domElement
+    .className =
     "vertex-label-layer";
 
 
-  labelRenderer.domElement.style.position =
+  labelRenderer
+    .domElement
+    .style
+    .position =
     "absolute";
 
-  labelRenderer.domElement.style.left =
+
+  labelRenderer
+    .domElement
+    .style
+    .left =
     "0";
 
-  labelRenderer.domElement.style.top =
+
+  labelRenderer
+    .domElement
+    .style
+    .top =
     "0";
 
-  labelRenderer.domElement.style.pointerEvents =
+
+  /*
+   * V1.0.1:
+   * labels themselves are not
+   * mouse-pickable yet.
+   */
+  labelRenderer
+    .domElement
+    .style
+    .pointerEvents =
     "none";
 
 
@@ -387,6 +439,12 @@ export function createViewer(
   );
 
 
+  /*
+   * =================================================
+   * Orbit controls
+   * =================================================
+   */
+
   const controls =
     new OrbitControls(
       camera,
@@ -394,10 +452,19 @@ export function createViewer(
     );
 
 
-  controls.enableDamping = true;
+  controls.enableDamping =
+    true;
 
-  controls.dampingFactor = 0.08;
 
+  controls.dampingFactor =
+    0.08;
+
+
+  /*
+   * =================================================
+   * Lighting
+   * =================================================
+   */
 
   const ambient =
     new THREE.AmbientLight(
@@ -406,7 +473,9 @@ export function createViewer(
     );
 
 
-  scene.add(ambient);
+  scene.add(
+    ambient
+  );
 
 
   const keyLight =
@@ -423,7 +492,9 @@ export function createViewer(
   );
 
 
-  scene.add(keyLight);
+  scene.add(
+    keyLight
+  );
 
 
   const fillLight =
@@ -440,7 +511,9 @@ export function createViewer(
   );
 
 
-  scene.add(fillLight);
+  scene.add(
+    fillLight
+  );
 
 
   const axes =
@@ -449,8 +522,30 @@ export function createViewer(
     );
 
 
-  scene.add(axes);
+  scene.add(
+    axes
+  );
 
+
+  /*
+   * =================================================
+   * Raycasting
+   * =================================================
+   */
+
+  const raycaster =
+    new THREE.Raycaster();
+
+
+  const pointer =
+    new THREE.Vector2();
+
+
+  /*
+   * =================================================
+   * Scene objects/state
+   * =================================================
+   */
 
   let modelRoot:
     THREE.Group | undefined;
@@ -464,20 +559,265 @@ export function createViewer(
     THREE.GridHelper | undefined;
 
 
-  let verticesVisible = false;
+  let verticesVisible =
+    false;
 
 
-  /**
-   * Remove the current vertex debug group.
+  /*
+   * Which vertex currently
+   * looks hovered?
    *
-   * This includes:
+   * This can come from:
    *
-   * - blue node meshes
-   * - CSS2D coordinate labels
+   * - table hover
+   * - 3D hover
    */
+  let hoveredVertexIndex:
+    number | null =
+    null;
+
+
+  /*
+   * Last hover event actually
+   * emitted FROM the 3D viewer
+   * to main.ts.
+   */
+  let lastViewerHoverIndex:
+    number | null =
+    null;
+
+
+  /*
+   * Callback registered
+   * by main.ts.
+   */
+  let vertexHoverHandler:
+
+    (
+      index: number | null
+    ) => void
+
+    =
+    () => undefined;
+
+
+  /*
+   * V0 = vertexNodes[0]
+   * V1 = vertexNodes[1]
+   * ...
+   */
+  const vertexNodes:
+    VertexNode[] =
+    [];
+
+
+  /*
+   * Matching HTML labels.
+   *
+   * V0 = vertexLabels[0]
+   */
+  const vertexLabels:
+    HTMLElement[] =
+    [];
+
+
+  /*
+   * =================================================
+   * Vertex visual state
+   * =================================================
+   */
+
+  function applyVertexHoverAppearance(): void {
+
+    vertexNodes.forEach(
+      (
+        node,
+        index
+      ) => {
+
+        const isHovered =
+          index ===
+          hoveredVertexIndex;
+
+
+        node
+          .material
+          .color
+          .setHex(
+
+            isHovered
+
+              ? HOVER_VERTEX_COLOR
+
+              : DEFAULT_VERTEX_COLOR
+
+          );
+
+
+        /*
+         * Use a strong scale during
+         * Day 3 so synchronization
+         * is easy to verify.
+         */
+        node.scale.setScalar(
+
+          isHovered
+
+            ? 2.5
+
+            : 1
+
+        );
+      }
+    );
+
+
+    vertexLabels.forEach(
+      (
+        label,
+        index
+      ) => {
+
+        label.classList.toggle(
+
+          "is-hovered",
+
+          index ===
+          hoveredVertexIndex
+
+        );
+      }
+    );
+  }
+
+
+  /*
+   * =================================================
+   * TABLE -> 3D
+   * =================================================
+   */
+
+  function setHoveredVertex(
+    index: number | null
+  ): void {
+
+    const normalizedIndex =
+
+      index !== null
+
+      &&
+
+      index >= 0
+
+      &&
+
+      index <
+        vertexNodes.length
+
+        ? index
+
+        : null;
+
+
+    if (
+      hoveredVertexIndex ===
+      normalizedIndex
+    ) {
+
+      return;
+    }
+
+
+    hoveredVertexIndex =
+      normalizedIndex;
+
+
+    applyVertexHoverAppearance();
+  }
+
+
+  /*
+   * =================================================
+   * 3D -> TABLE
+   * =================================================
+   */
+
+  function emitVertexHover(
+    index: number | null
+  ): void {
+
+    /*
+     * First update the 3D
+     * visual state.
+     */
+    setHoveredVertex(
+      index
+    );
+
+
+    /*
+     * Do not repeatedly send
+     * the same event every
+     * pointermove frame.
+     */
+    if (
+      lastViewerHoverIndex ===
+      index
+    ) {
+
+      return;
+    }
+
+
+    lastViewerHoverIndex =
+      index;
+
+
+    vertexHoverHandler(
+      index
+    );
+  }
+
+
+  function setVertexHoverHandler(
+
+    handler:
+      (
+        index: number | null
+      ) => void
+
+  ): void {
+
+    vertexHoverHandler =
+      handler;
+  }
+
+
+  /*
+   * =================================================
+   * Clear vertex objects
+   * =================================================
+   */
+
   function clearVertexRoot(): void {
 
-    if (!vertexRoot) {
+    emitVertexHover(
+      null
+    );
+
+
+    vertexNodes.length =
+      0;
+
+
+    vertexLabels.length =
+      0;
+
+
+    if (
+      !vertexRoot
+    ) {
+
       return;
     }
 
@@ -493,14 +833,15 @@ export function createViewer(
         THREE.Object3D
       ) => {
 
-        // Dispose the sphere nodes.
-
         if (
           object
-          instanceof THREE.Mesh
+          instanceof
+          THREE.Mesh
         ) {
 
-          object.geometry.dispose();
+          object
+            .geometry
+            .dispose();
 
 
           if (
@@ -509,45 +850,63 @@ export function createViewer(
             )
           ) {
 
-            object.material.forEach(
-              (
-                material:
-                THREE.Material
-              ) =>
-                material.dispose()
-            );
+            object
+              .material
+              .forEach(
+                (
+                  material:
+                    THREE.Material
+                ) => {
+
+                  material.dispose();
+
+                }
+              );
 
           } else {
 
-            object.material.dispose();
-
+            object
+              .material
+              .dispose();
           }
-
         }
 
-
-        // Remove any HTML labels.
 
         if (
           object
-          instanceof CSS2DObject
+          instanceof
+          CSS2DObject
         ) {
 
-          object.element.remove();
-
+          object
+            .element
+            .remove();
         }
-
       }
     );
 
 
-    vertexRoot = undefined;
+    vertexRoot =
+      undefined;
   }
 
 
+  /*
+   * =================================================
+   * Clear complete model
+   * =================================================
+   */
+
   function clear(): void {
 
-    if (modelRoot) {
+    emitVertexHover(
+      null
+    );
+
+
+    if (
+      modelRoot
+    ) {
 
       scene.remove(
         modelRoot
@@ -557,18 +916,26 @@ export function createViewer(
       modelRoot.traverse(
         (
           object:
-          THREE.Object3D
+            THREE.Object3D
         ) => {
 
           if (
+
             object
-              instanceof THREE.Mesh
+            instanceof
+            THREE.Mesh
+
             ||
+
             object
-              instanceof THREE.LineSegments
+            instanceof
+            THREE.LineSegments
+
           ) {
 
-            object.geometry.dispose();
+            object
+              .geometry
+              .dispose();
 
 
             if (
@@ -577,41 +944,50 @@ export function createViewer(
               )
             ) {
 
-              object.material.forEach(
-                (
-                  material:
-                  THREE.Material
-                ) =>
-                  material.dispose()
-              );
+              object
+                .material
+                .forEach(
+                  (
+                    material:
+                      THREE.Material
+                  ) => {
+
+                    material.dispose();
+
+                  }
+                );
 
             } else {
 
-              object.material.dispose();
-
+              object
+                .material
+                .dispose();
             }
-
           }
-
         }
       );
 
 
-      modelRoot = undefined;
+      modelRoot =
+        undefined;
     }
 
 
     clearVertexRoot();
 
 
-    if (grid) {
+    if (
+      grid
+    ) {
 
       scene.remove(
         grid
       );
 
 
-      grid.geometry.dispose();
+      grid
+        .geometry
+        .dispose();
 
 
       if (
@@ -620,30 +996,45 @@ export function createViewer(
         )
       ) {
 
-        grid.material.forEach(
-          (
-            material:
-            THREE.Material
-          ) =>
-            material.dispose()
-        );
+        grid
+          .material
+          .forEach(
+            (
+              material:
+                THREE.Material
+            ) => {
+
+              material.dispose();
+
+            }
+          );
 
       } else {
 
-        grid.material.dispose();
-
+        grid
+          .material
+          .dispose();
       }
 
 
-      grid = undefined;
+      grid =
+        undefined;
     }
-
   }
 
 
+  /*
+   * =================================================
+   * Fit camera
+   * =================================================
+   */
+
   function fit(): void {
 
-    if (!modelRoot) {
+    if (
+      !modelRoot
+    ) {
+
       return;
     }
 
@@ -655,7 +1046,10 @@ export function createViewer(
         );
 
 
-    if (box.isEmpty()) {
+    if (
+      box.isEmpty()
+    ) {
+
       return;
     }
 
@@ -668,17 +1062,27 @@ export function createViewer(
       new THREE.Vector3();
 
 
-    box.getSize(size);
+    box.getSize(
+      size
+    );
 
-    box.getCenter(center);
+
+    box.getCenter(
+      center
+    );
 
 
     const maxDimension =
       Math.max(
+
         size.x,
+
         size.y,
+
         size.z,
+
         1
+
       );
 
 
@@ -689,9 +1093,12 @@ export function createViewer(
 
 
     const distance =
+
       (
         maxDimension
+
         /
+
         (
           2
           *
@@ -700,6 +1107,7 @@ export function createViewer(
           )
         )
       )
+
       *
       1.8;
 
@@ -707,13 +1115,16 @@ export function createViewer(
     camera.position.set(
 
       center.x
-        + distance * 0.8,
+        +
+        distance * 0.8,
 
       center.y
-        - distance * 0.9,
+        -
+        distance * 0.9,
 
       center.z
-        + distance * 0.65
+        +
+        distance * 0.65
 
     );
 
@@ -741,23 +1152,12 @@ export function createViewer(
   }
 
 
-  /**
-   * Build:
-   *
-   * V0 dot
-   * V0 (x,y,z) label
-   *
-   * V1 dot
-   * V1 (x,y,z) label
-   *
-   * ...
-   *
-   * IMPORTANT:
-   * verticesWorld is used.
-   *
-   * This means BREP transforms have already
-   * been applied.
+  /*
+   * =================================================
+   * Build vertex nodes and labels
+   * =================================================
    */
+
   function buildVertexNodes(
     parsed: ParsedSmd
   ): void {
@@ -766,7 +1166,8 @@ export function createViewer(
 
 
     const vertices =
-      parsed.geometry
+      parsed
+        .geometry
         .brep
         .verticesWorld;
 
@@ -791,14 +1192,20 @@ export function createViewer(
 
     const radius =
       Math.max(
+
         modelSize * 0.006,
+
         8
+
       );
 
 
     for (
       let index = 0;
-      index < vertices.length;
+
+      index <
+      vertices.length;
+
       index += 1
     ) {
 
@@ -806,11 +1213,13 @@ export function createViewer(
         vertices[index];
 
 
-      // ---------------------------------------------
-      // Node / dot
-      // ---------------------------------------------
+      /*
+       * ---------------------------------------------
+       * Vertex sphere
+       * ---------------------------------------------
+       */
 
-      const geometry =
+      const nodeGeometry =
         new THREE.SphereGeometry(
           radius,
           12,
@@ -818,16 +1227,18 @@ export function createViewer(
         );
 
 
-      const material =
+      const nodeMaterial =
         new THREE.MeshBasicMaterial({
-          color: 0x2563eb
+          color:
+            DEFAULT_VERTEX_COLOR
         });
 
 
-      const node =
+      const node:
+        VertexNode =
         new THREE.Mesh(
-          geometry,
-          material
+          nodeGeometry,
+          nodeMaterial
         );
 
 
@@ -846,16 +1257,27 @@ export function createViewer(
         `V${index}`;
 
 
-      node.userData.vertexIndex =
+      node
+        .userData
+        .vertexIndex =
         index;
 
 
-      root.add(node);
+      root.add(
+        node
+      );
 
 
-      // ---------------------------------------------
-      // Coordinate label
-      // ---------------------------------------------
+      vertexNodes.push(
+        node
+      );
+
+
+      /*
+       * ---------------------------------------------
+       * Vertex coordinate label
+       * ---------------------------------------------
+       */
 
       const labelElement =
         document.createElement(
@@ -874,8 +1296,15 @@ export function createViewer(
         );
 
 
-      labelElement.dataset.vertexIndex =
+      labelElement
+        .dataset
+        .vertexIndex =
         String(index);
+
+
+      vertexLabels.push(
+        labelElement
+      );
 
 
       const labelObject =
@@ -899,14 +1328,15 @@ export function createViewer(
         `V${index}-label`;
 
 
-      labelObject.userData.vertexIndex =
+      labelObject
+        .userData
+        .vertexIndex =
         index;
 
 
       root.add(
         labelObject
       );
-
     }
 
 
@@ -920,6 +1350,12 @@ export function createViewer(
   }
 
 
+  /*
+   * =================================================
+   * Load SMD model
+   * =================================================
+   */
+
   function load(
     parsed: ParsedSmd
   ): void {
@@ -928,7 +1364,9 @@ export function createViewer(
 
 
     const geometry =
-      buildGeometry(parsed);
+      buildGeometry(
+        parsed
+      );
 
 
     const root =
@@ -938,11 +1376,14 @@ export function createViewer(
     const material =
       new THREE.MeshStandardMaterial({
 
-        color: 0xc9cdd2,
+        color:
+          0xc9cdd2,
 
-        roughness: 0.82,
+        roughness:
+          0.82,
 
-        metalness: 0,
+        metalness:
+          0,
 
         side:
           THREE.DoubleSide
@@ -971,7 +1412,8 @@ export function createViewer(
 
     const edgeMaterial =
       new THREE.LineBasicMaterial({
-        color: 0x222222
+        color:
+          0x222222
       });
 
 
@@ -996,10 +1438,6 @@ export function createViewer(
     );
 
 
-    // Build all BREP vertex dots and labels.
-    // They remain hidden until the toolbar
-    // button enables them.
-
     buildVertexNodes(
       parsed
     );
@@ -1023,13 +1461,20 @@ export function createViewer(
 
     grid =
       makeGrid(
+
         Math.max(
+
           size.x,
+
           size.y,
+
           size.z
+
         )
+
         *
         2.5
+
       );
 
 
@@ -1041,6 +1486,12 @@ export function createViewer(
     fit();
   }
 
+
+  /*
+   * =================================================
+   * Show / hide vertices
+   * =================================================
+   */
 
   function setVerticesVisible(
     visible: boolean
@@ -1056,11 +1507,257 @@ export function createViewer(
 
       vertexRoot.visible =
         visible;
-
     }
 
+
+    if (
+      !visible
+    ) {
+
+      emitVertexHover(
+        null
+      );
+
+
+      renderer
+        .domElement
+        .style
+        .cursor =
+        "";
+    }
   }
 
+
+  /*
+   * =================================================
+   * Pointer position
+   * =================================================
+   */
+
+  function updatePointer(
+    event: PointerEvent
+  ): void {
+
+    const rect =
+      renderer
+        .domElement
+        .getBoundingClientRect();
+
+
+    pointer.x =
+
+      (
+        (
+          event.clientX
+          -
+          rect.left
+        )
+
+        /
+        rect.width
+      )
+
+      *
+      2
+
+      -
+      1;
+
+
+    pointer.y =
+
+      -
+
+      (
+        (
+          event.clientY
+          -
+          rect.top
+        )
+
+        /
+        rect.height
+      )
+
+      *
+      2
+
+      +
+      1;
+  }
+
+
+  /*
+   * =================================================
+   * 3D vertex hover
+   * =================================================
+   */
+
+  function handlePointerMove(
+    event: PointerEvent
+  ): void {
+
+    /*
+     * V1.0.1:
+     *
+     * 3D nodes must currently
+     * be visible before they
+     * can be hovered.
+     */
+    if (
+
+      !verticesVisible
+
+      ||
+
+      vertexNodes.length === 0
+
+    ) {
+
+      emitVertexHover(
+        null
+      );
+
+
+      renderer
+        .domElement
+        .style
+        .cursor =
+        "";
+
+
+      return;
+    }
+
+
+    updatePointer(
+      event
+    );
+
+
+    raycaster.setFromCamera(
+      pointer,
+      camera
+    );
+
+
+    const intersections =
+      raycaster.intersectObjects(
+        vertexNodes,
+        false
+      );
+
+
+    const first =
+      intersections[0];
+
+
+    if (
+      !first
+    ) {
+
+      emitVertexHover(
+        null
+      );
+
+
+      renderer
+        .domElement
+        .style
+        .cursor =
+        "";
+
+
+      return;
+    }
+
+
+    const index =
+      Number(
+        first
+          .object
+          .userData
+          .vertexIndex
+      );
+
+
+    if (
+      !Number.isInteger(
+        index
+      )
+    ) {
+
+      emitVertexHover(
+        null
+      );
+
+
+      renderer
+        .domElement
+        .style
+        .cursor =
+        "";
+
+
+      return;
+    }
+
+
+    emitVertexHover(
+      index
+    );
+
+
+    renderer
+      .domElement
+      .style
+      .cursor =
+      "pointer";
+  }
+
+
+  function handlePointerLeave(): void {
+
+    emitVertexHover(
+      null
+    );
+
+
+    renderer
+      .domElement
+      .style
+      .cursor =
+      "";
+  }
+
+
+  renderer
+    .domElement
+    .addEventListener(
+
+      "pointermove",
+
+      handlePointerMove
+
+    );
+
+
+  renderer
+    .domElement
+    .addEventListener(
+
+      "pointerleave",
+
+      handlePointerLeave
+
+    );
+
+
+  /*
+   * =================================================
+   * Resize
+   * =================================================
+   */
 
   function resize(): void {
 
@@ -1113,38 +1810,49 @@ export function createViewer(
   resize();
 
 
-  let animationFrame = 0;
+  /*
+   * =================================================
+   * Render loop
+   * =================================================
+   */
+
+  let animationFrame =
+    0;
 
 
-  const animate = (): void => {
+  const animate =
+    (): void => {
 
-    animationFrame =
-      requestAnimationFrame(
-        animate
+      animationFrame =
+        requestAnimationFrame(
+          animate
+        );
+
+
+      controls.update();
+
+
+      renderer.render(
+        scene,
+        camera
       );
 
 
-    controls.update();
-
-
-    // Render geometry.
-    renderer.render(
-      scene,
-      camera
-    );
-
-
-    // Render coordinate labels.
-    labelRenderer.render(
-      scene,
-      camera
-    );
-
-  };
+      labelRenderer.render(
+        scene,
+        camera
+      );
+    };
 
 
   animate();
 
+
+  /*
+   * =================================================
+   * Public viewer API
+   * =================================================
+   */
 
   return {
 
@@ -1155,6 +1863,10 @@ export function createViewer(
     fit,
 
     setVerticesVisible,
+
+    setHoveredVertex,
+
+    setVertexHoverHandler,
 
 
     dispose(): void {
@@ -1167,6 +1879,28 @@ export function createViewer(
       resizeObserver.disconnect();
 
 
+      renderer
+        .domElement
+        .removeEventListener(
+
+          "pointermove",
+
+          handlePointerMove
+
+        );
+
+
+      renderer
+        .domElement
+        .removeEventListener(
+
+          "pointerleave",
+
+          handlePointerLeave
+
+        );
+
+
       clear();
 
 
@@ -1176,13 +1910,15 @@ export function createViewer(
       renderer.dispose();
 
 
-      renderer.domElement.remove();
+      renderer
+        .domElement
+        .remove();
 
 
-      labelRenderer.domElement.remove();
-
+      labelRenderer
+        .domElement
+        .remove();
     }
-
   };
 }
 
@@ -1196,7 +1932,6 @@ export function boundingBoxText(
   ) {
 
     return "-";
-
   }
 
 
@@ -1210,52 +1945,55 @@ export function boundingBoxText(
 
 
   for (
-    const v of vertices
+    const vertex of vertices
   ) {
 
     minX =
       Math.min(
         minX,
-        v.x
+        vertex.x
       );
 
     minY =
       Math.min(
         minY,
-        v.y
+        vertex.y
       );
 
     minZ =
       Math.min(
         minZ,
-        v.z
+        vertex.z
       );
 
 
     maxX =
       Math.max(
         maxX,
-        v.x
+        vertex.x
       );
 
     maxY =
       Math.max(
         maxY,
-        v.y
+        vertex.y
       );
 
     maxZ =
       Math.max(
         maxZ,
-        v.z
+        vertex.z
       );
-
   }
 
 
   return (
+
     `X ${minX}..${maxX}` +
+
     ` | Y ${minY}..${maxY}` +
+
     ` | Z ${minZ}..${maxZ} mm`
+
   );
 }
