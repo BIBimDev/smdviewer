@@ -20,7 +20,6 @@ const app =
     "#app"
   );
 
-
 if (!app) {
   throw new Error(
     "#app element not found"
@@ -65,6 +64,15 @@ app.innerHTML = `
           type="button"
         >
           Show vertices
+        </button>
+
+
+        <button
+          id="faceSelectButton"
+          class="button"
+          type="button"
+        >
+          Select faces
         </button>
 
 
@@ -115,10 +123,17 @@ app.innerHTML = `
         <section class="panel inspector-panel">
 
           <div class="inspector-panel-title">
-
             <h2>
               Geometry Inspector
             </h2>
+          </div>
+
+
+          <div class="inspector-section-header">
+
+            <div class="inspector-section-title">
+              Vertices
+            </div>
 
             <span
               id="vertexCountBadge"
@@ -130,11 +145,6 @@ app.innerHTML = `
           </div>
 
 
-          <div class="inspector-section-title">
-            Vertices
-          </div>
-
-
           <div
             id="vertexTableWrap"
             class="vertex-table-wrap"
@@ -143,25 +153,20 @@ app.innerHTML = `
             <table class="inspector-table">
 
               <thead>
-
                 <tr>
                   <th>Vertex</th>
                   <th>X</th>
                   <th>Y</th>
                   <th>Z</th>
                 </tr>
-
               </thead>
-
 
               <tbody id="vertexTableBody">
 
                 <tr class="empty-row">
-
                   <td colspan="4">
                     Open an SMD file.
                   </td>
-
                 </tr>
 
               </tbody>
@@ -170,20 +175,71 @@ app.innerHTML = `
 
           </div>
 
+
+          <div class="inspector-section-header face-section-header">
+
+            <div class="inspector-section-title">
+              Faces
+            </div>
+
+            <span
+              id="faceCountBadge"
+              class="inspector-badge"
+            >
+              0
+            </span>
+
+          </div>
+
+
+          <div
+            id="faceTableWrap"
+            class="face-table-wrap"
+          >
+
+            <table class="inspector-table face-table">
+
+              <thead>
+                <tr>
+                  <th>Face</th>
+                  <th>Name</th>
+                  <th>Vertices</th>
+                </tr>
+              </thead>
+
+              <tbody id="faceTableBody">
+
+                <tr class="empty-row">
+                  <td colspan="3">
+                    Open an SMD file.
+                  </td>
+                </tr>
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+
+          <div
+            id="selectedFaceInfo"
+            class="selected-face-info"
+          >
+            Selected face: none
+          </div>
+
         </section>
 
 
         <section class="panel notes">
 
-          <h2>
-            V1.0.1 development
-          </h2>
+          <h2>V1.0.1 development</h2>
 
           <p>
-            Day 3 adds a vertex inspector
-            table and synchronized hover
-            between the table and visible
-            3D vertex nodes.
+            individual BREP face meshes,
+            face-table inspection, face picking and
+            linked vertex highlighting.
           </p>
 
         </section>
@@ -221,10 +277,7 @@ app.innerHTML = `
 `;
 
 
-
-function mustQuery<
-  T extends Element
->(
+function mustQuery<T extends Element>(
   selector: string
 ): T {
 
@@ -233,19 +286,14 @@ function mustQuery<
       selector
     );
 
-
   if (!element) {
-
     throw new Error(
       `Required UI element was not found: ${selector}`
     );
-
   }
-
 
   return element;
 }
-
 
 
 const viewerElement =
@@ -253,60 +301,70 @@ const viewerElement =
     "#viewer"
   );
 
-
 const fileInput =
   mustQuery<HTMLInputElement>(
     "#fileInput"
   );
-
 
 const objectInfo =
   mustQuery<HTMLElement>(
     "#objectInfo"
   );
 
-
 const geometryInfo =
   mustQuery<HTMLElement>(
     "#geometryInfo"
   );
-
 
 const statusText =
   mustQuery<HTMLElement>(
     "#statusText"
   );
 
-
 const dropOverlay =
   mustQuery<HTMLElement>(
     "#dropOverlay"
   );
-
 
 const verticesButton =
   mustQuery<HTMLButtonElement>(
     "#verticesButton"
   );
 
+const faceSelectButton =
+  mustQuery<HTMLButtonElement>(
+    "#faceSelectButton"
+  );
 
 const fitButton =
   mustQuery<HTMLButtonElement>(
     "#fitButton"
   );
 
-
 const vertexTableBody =
   mustQuery<HTMLTableSectionElement>(
     "#vertexTableBody"
   );
 
+const faceTableBody =
+  mustQuery<HTMLTableSectionElement>(
+    "#faceTableBody"
+  );
 
 const vertexCountBadge =
   mustQuery<HTMLElement>(
     "#vertexCountBadge"
   );
 
+const faceCountBadge =
+  mustQuery<HTMLElement>(
+    "#faceCountBadge"
+  );
+
+const selectedFaceInfo =
+  mustQuery<HTMLElement>(
+    "#selectedFaceInfo"
+  );
 
 
 const viewer =
@@ -315,15 +373,27 @@ const viewer =
   );
 
 
+let currentParsed:
+  ParsedSmd | null =
+  null;
 
 let verticesVisible =
   false;
 
+let faceSelectMode =
+  false;
 
 let hoveredVertexRow:
   number | null =
   null;
 
+let hoveredFaceRow:
+  number | null =
+  null;
+
+let selectedFaceRow:
+  number | null =
+  null;
 
 
 function esc(
@@ -333,67 +403,37 @@ function esc(
   return String(
     value ?? "-"
   )
-    .replaceAll(
-      "&",
-      "&amp;"
-    )
-    .replaceAll(
-      "<",
-      "&lt;"
-    )
-    .replaceAll(
-      ">",
-      "&gt;"
-    )
-    .replaceAll(
-      '"',
-      "&quot;"
-    );
-
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
-
 
 
 function formatCoordinate(
   value: number
 ): string {
 
-  /*
-   * Avoid displaying:
-   *
-   * -0
-   */
-
-  if (
-    Math.abs(value) <
-    1e-9
-  ) {
-
-    value = 0;
-
-  }
-
+  const normalized =
+    Math.abs(value) < 1e-9
+      ? 0
+      : value;
 
   const rounded =
-    Math.round(value);
-
+    Math.round(normalized);
 
   if (
     Math.abs(
-      value - rounded
+      normalized - rounded
     ) < 1e-6
   ) {
-
     return String(
       rounded
     );
-
   }
 
-
-  return value.toFixed(3);
+  return normalized.toFixed(3);
 }
-
 
 
 function profileSize(
@@ -401,18 +441,13 @@ function profileSize(
 ): string {
 
   const edges =
-    parsed.geometry
-      .profileEdges;
-
+    parsed.geometry.profileEdges;
 
   if (
     edges.length === 0
   ) {
-
     return "not parsed";
-
   }
-
 
   const xs =
     edges.flatMap(
@@ -422,7 +457,6 @@ function profileSize(
       ]
     );
 
-
   const ys =
     edges.flatMap(
       (edge) => [
@@ -431,24 +465,18 @@ function profileSize(
       ]
     );
 
-
   const width =
     Math.max(...xs)
     -
     Math.min(...xs);
-
 
   const depth =
     Math.max(...ys)
     -
     Math.min(...ys);
 
-
-  return (
-    `${width} × ${depth} mm`
-  );
+  return `${width} × ${depth} mm`;
 }
-
 
 
 function updateInfo(
@@ -459,32 +487,21 @@ function updateInfo(
   const g =
     parsed.geometry;
 
-
   const b =
     g.brep;
 
-
   objectInfo.innerHTML = `
-
     <dt>File</dt>
-    <dd>
-      ${esc(sourceName)}
-    </dd>
+    <dd>${esc(sourceName)}</dd>
 
     <dt>Format</dt>
-    <dd>
-      DICAD ASC
-    </dd>
+    <dd>DICAD ASC</dd>
 
     <dt>Block</dt>
-    <dd>
-      #10125
-    </dd>
+    <dd>#10125</dd>
 
     <dt>Name</dt>
-    <dd>
-      ${esc(g.name)}
-    </dd>
+    <dd>${esc(g.name)}</dd>
 
     <dt>Object ID</dt>
     <dd class="mono">
@@ -492,52 +509,33 @@ function updateInfo(
     </dd>
 
     <dt>Teilart</dt>
-    <dd>
-      ${esc(g.partType)}
-    </dd>
-
+    <dd>${esc(g.partType)}</dd>
   `;
 
-
   geometryInfo.innerHTML = `
-
     <dt>Profile</dt>
     <dd>
-      ${esc(
-        profileSize(parsed)
-      )}
+      ${esc(profileSize(parsed))}
     </dd>
 
     <dt>Profile edges</dt>
-    <dd>
-      ${g.profileEdges.length}
-    </dd>
+    <dd>${g.profileEdges.length}</dd>
 
     <dt>Vertices</dt>
-    <dd>
-      ${b.verticesWorld.length}
-    </dd>
+    <dd>${b.verticesWorld.length}</dd>
 
     <dt>Faces</dt>
-    <dd>
-      ${b.faces.length}
-    </dd>
+    <dd>${b.faces.length}</dd>
 
     <dt>Planes</dt>
-    <dd>
-      ${b.planes.length}
-    </dd>
+    <dd>${b.planes.length}</dd>
 
     <dt>Face names</dt>
-    <dd>
-      ${b.faceNames.length}
-    </dd>
+    <dd>${b.faceNames.length}</dd>
 
     <dt>BREP transform</dt>
     <dd>
-      ${b.transform
-        ? "yes"
-        : "no"}
+      ${b.transform ? "yes" : "no"}
     </dd>
 
     <dt>Bounds</dt>
@@ -548,132 +546,304 @@ function updateInfo(
         )
       )}
     </dd>
-
   `;
-
 }
 
 
-
-/*
- * Find one vertex table row.
- *
- * Example:
- *
- * getVertexRow(8)
- *
- * finds:
- *
- * <tr data-vertex-index="8">
- */
 function getVertexRow(
   index: number
 ): HTMLTableRowElement | null {
 
   return vertexTableBody
     .querySelector<HTMLTableRowElement>(
-
       `tr[data-vertex-index="${index}"]`
-
     );
-
 }
 
 
+function getFaceRow(
+  index: number
+): HTMLTableRowElement | null {
 
-/*
- * Highlight one row in the table.
- *
- * Used by:
- *
- * table -> 3D hover
- *
- * and
- *
- * 3D -> table hover
- */
+  return faceTableBody
+    .querySelector<HTMLTableRowElement>(
+      `tr[data-face-index="${index}"]`
+    );
+}
+
+
 function setVertexRowHover(
   index: number | null,
   scrollToRow = false
 ): void {
 
-  /*
-   * Remove highlight from
-   * previous row.
-   */
-
   if (
     hoveredVertexRow !== null
   ) {
-
     getVertexRow(
       hoveredVertexRow
     )?.classList.remove(
       "is-hovered"
     );
-
   }
-
 
   hoveredVertexRow =
     index;
 
-
   if (
     index === null
   ) {
-
     return;
-
   }
-
 
   const row =
     getVertexRow(index);
-
 
   if (!row) {
     return;
   }
 
-
   row.classList.add(
     "is-hovered"
   );
 
-
-  /*
-   * If hover came from the
-   * 3D viewer, bring the row
-   * into view.
-   *
-   * We will improve this
-   * scrolling implementation
-   * later in V1.0.2.
-   */
-
   if (
     scrollToRow
   ) {
-
     row.scrollIntoView({
-
       block: "nearest",
-
       inline: "nearest"
-
     });
-
   }
-
 }
 
 
+function clearFaceRelatedVertexRows(): void {
 
-/*
- * Create the Vertex Inspector
- * table from BREP world vertices.
- */
+  vertexTableBody
+    .querySelectorAll<HTMLTableRowElement>(
+      ".vertex-row.is-face-related"
+    )
+    .forEach(
+      (row) => {
+        row.classList.remove(
+          "is-face-related"
+        );
+      }
+    );
+}
+
+
+function refreshFaceRelatedVertexRows(): void {
+
+  clearFaceRelatedVertexRows();
+
+  if (
+    !currentParsed
+  ) {
+    return;
+  }
+
+  const activeFaceIndex =
+    hoveredFaceRow !== null
+      ? hoveredFaceRow
+      : selectedFaceRow;
+
+  if (
+    activeFaceIndex === null
+  ) {
+    return;
+  }
+
+  const face =
+    currentParsed
+      .geometry
+      .brep
+      .faces[
+        activeFaceIndex
+      ];
+
+  if (!face) {
+    return;
+  }
+
+  for (
+    const vertexIndex of
+    face.indices
+  ) {
+
+    getVertexRow(
+      vertexIndex
+    )?.classList.add(
+      "is-face-related"
+    );
+  }
+}
+
+
+function setFaceRowHover(
+  index: number | null,
+  scrollToRow = false
+): void {
+
+  if (
+    hoveredFaceRow !== null
+  ) {
+
+    getFaceRow(
+      hoveredFaceRow
+    )?.classList.remove(
+      "is-hovered"
+    );
+  }
+
+  hoveredFaceRow =
+    index;
+
+  if (
+    index !== null
+  ) {
+
+    const row =
+      getFaceRow(
+        index
+      );
+
+    row?.classList.add(
+      "is-hovered"
+    );
+
+    if (
+      row
+      &&
+      scrollToRow
+    ) {
+      row.scrollIntoView({
+        block: "nearest",
+        inline: "nearest"
+      });
+    }
+  }
+
+  refreshFaceRelatedVertexRows();
+}
+
+
+function updateSelectedFaceInfo(): void {
+
+  if (
+    !currentParsed
+    ||
+    selectedFaceRow === null
+  ) {
+
+    selectedFaceInfo.textContent =
+      "Selected face: none";
+
+    return;
+  }
+
+  const face =
+    currentParsed
+      .geometry
+      .brep
+      .faces[
+        selectedFaceRow
+      ];
+
+  if (!face) {
+    selectedFaceInfo.textContent =
+      "Selected face: none";
+
+    return;
+  }
+
+  const faceName =
+    currentParsed
+      .geometry
+      .brep
+      .faceNames[
+        selectedFaceRow
+      ]
+    ??
+    face.name
+    ??
+    "-";
+
+  const vertexText =
+    face.indices
+      .map(
+        (index) =>
+          `V${index}`
+      )
+      .join(", ");
+
+  selectedFaceInfo.innerHTML = `
+    <strong>
+      Selected F${selectedFaceRow}
+    </strong>
+
+    <span>
+      ${esc(faceName)}
+    </span>
+
+    <span>
+      ${esc(vertexText)}
+    </span>
+  `;
+}
+
+
+function setFaceRowSelected(
+  index: number | null,
+  scrollToRow = false
+): void {
+
+  if (
+    selectedFaceRow !== null
+  ) {
+
+    getFaceRow(
+      selectedFaceRow
+    )?.classList.remove(
+      "is-selected"
+    );
+  }
+
+  selectedFaceRow =
+    index;
+
+  if (
+    index !== null
+  ) {
+
+    const row =
+      getFaceRow(
+        index
+      );
+
+    row?.classList.add(
+      "is-selected"
+    );
+
+    if (
+      row
+      &&
+      scrollToRow
+    ) {
+      row.scrollIntoView({
+        block: "nearest",
+        inline: "nearest"
+      });
+    }
+  }
+
+  refreshFaceRelatedVertexRows();
+
+  updateSelectedFaceInfo();
+}
+
+
 function renderVertexTable(
   vertices: Vec3[]
 ): void {
@@ -681,102 +851,72 @@ function renderVertexTable(
   hoveredVertexRow =
     null;
 
-
   vertexCountBadge.textContent =
     String(
       vertices.length
     );
-
 
   if (
     vertices.length === 0
   ) {
 
     vertexTableBody.innerHTML = `
-
       <tr class="empty-row">
-
         <td colspan="4">
           No vertices found.
         </td>
-
       </tr>
-
     `;
 
-
     return;
-
   }
 
-
   vertexTableBody.innerHTML =
-
     vertices
       .map(
         (
           vertex,
           index
         ) => `
-
           <tr
             class="vertex-row"
             data-vertex-index="${index}"
           >
-
             <td class="vertex-id">
               V${index}
             </td>
 
             <td class="number-cell">
-              ${formatCoordinate(
-                vertex.x
-              )}
+              ${formatCoordinate(vertex.x)}
             </td>
 
             <td class="number-cell">
-              ${formatCoordinate(
-                vertex.y
-              )}
+              ${formatCoordinate(vertex.y)}
             </td>
 
             <td class="number-cell">
-              ${formatCoordinate(
-                vertex.z
-              )}
+              ${formatCoordinate(vertex.z)}
             </td>
-
           </tr>
-
         `
       )
       .join("");
 
-
-  /*
-   * Attach table -> 3D hover.
-   */
-
   const rows =
     vertexTableBody
       .querySelectorAll<HTMLTableRowElement>(
-
         "tr[data-vertex-index]"
-
       );
-
 
   rows.forEach(
     (row) => {
 
       const index =
         Number(
-          row.dataset
-            .vertexIndex
+          row.dataset.vertexIndex
         );
 
-
-    row.addEventListener(
+      row.addEventListener(
         "pointerenter",
         () => {
 
@@ -790,29 +930,190 @@ function renderVertexTable(
         }
       );
 
+      row.addEventListener(
+        "pointerleave",
+        () => {
 
-    row.addEventListener(
-          "pointerleave",
-          () => {
+          setVertexRowHover(
+            null
+          );
 
-            setVertexRowHover(
-              null
-            );
-
-            viewer.setHoveredVertex(
-              null
-            );
-          }
-        );
-
+          viewer.setHoveredVertex(
+            null
+          );
+        }
+      );
     }
   );
-
 }
 
 
+function renderFaceTable(
+  parsed: ParsedSmd
+): void {
 
-function clearVertexTable(
+  hoveredFaceRow =
+    null;
+
+  selectedFaceRow =
+    null;
+
+  const faces =
+    parsed.geometry.brep.faces;
+
+  const faceNames =
+    parsed.geometry.brep.faceNames;
+
+  faceCountBadge.textContent =
+    String(
+      faces.length
+    );
+
+  selectedFaceInfo.textContent =
+    "Selected face: none";
+
+  if (
+    faces.length === 0
+  ) {
+
+    faceTableBody.innerHTML = `
+      <tr class="empty-row">
+        <td colspan="3">
+          No faces found.
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+  faceTableBody.innerHTML =
+    faces
+      .map(
+        (
+          face,
+          index
+        ) => {
+
+          const name =
+            faceNames[index]
+            ??
+            face.name
+            ??
+            "-";
+
+          const vertices =
+            face.indices
+              .map(
+                (vertexIndex) =>
+                  `V${vertexIndex}`
+              )
+              .join(", ");
+
+          return `
+            <tr
+              class="face-row"
+              data-face-index="${index}"
+            >
+              <td class="face-id">
+                F${index}
+              </td>
+
+              <td
+                class="face-name"
+                title="${esc(name)}"
+              >
+                ${esc(name)}
+              </td>
+
+              <td
+                class="face-vertices"
+                title="${esc(vertices)}"
+              >
+                ${esc(vertices)}
+              </td>
+            </tr>
+          `;
+        }
+      )
+      .join("");
+
+  const rows =
+    faceTableBody
+      .querySelectorAll<HTMLTableRowElement>(
+        "tr[data-face-index]"
+      );
+
+  rows.forEach(
+    (row) => {
+
+      const index =
+        Number(
+          row.dataset.faceIndex
+        );
+
+      row.addEventListener(
+        "pointerenter",
+        () => {
+
+          setFaceRowHover(
+            index
+          );
+
+          viewer.setHoveredFace(
+            index
+          );
+        }
+      );
+
+      row.addEventListener(
+        "pointerleave",
+        () => {
+
+          setFaceRowHover(
+            null
+          );
+
+          viewer.setHoveredFace(
+            null
+          );
+        }
+      );
+
+
+      /*
+       * Intentional V1.0.1 behavior:
+       *
+       * Table selection works even if
+       * Face Select mode is OFF.
+       *
+       * V1.0.2 fixes this later.
+       */
+      row.addEventListener(
+        "click",
+        () => {
+
+          const nextSelection =
+            selectedFaceRow ===
+            index
+              ? null
+              : index;
+
+          setFaceRowSelected(
+            nextSelection
+          );
+
+          viewer.setSelectedFace(
+            nextSelection
+          );
+        }
+      );
+    }
+  );
+}
+
+
+function clearInspector(
   message =
     "Open an SMD file."
 ): void {
@@ -820,25 +1121,37 @@ function clearVertexTable(
   hoveredVertexRow =
     null;
 
+  hoveredFaceRow =
+    null;
+
+  selectedFaceRow =
+    null;
 
   vertexCountBadge.textContent =
     "0";
 
+  faceCountBadge.textContent =
+    "0";
 
   vertexTableBody.innerHTML = `
-
     <tr class="empty-row">
-
       <td colspan="4">
         ${esc(message)}
       </td>
-
     </tr>
-
   `;
 
-}
+  faceTableBody.innerHTML = `
+    <tr class="empty-row">
+      <td colspan="3">
+        ${esc(message)}
+      </td>
+    </tr>
+  `;
 
+  selectedFaceInfo.textContent =
+    "Selected face: none";
+}
 
 
 function decodeBuffer(
@@ -846,7 +1159,6 @@ function decodeBuffer(
 ): string {
 
   try {
-
     return new TextDecoder(
       "windows-1252"
     ).decode(buffer);
@@ -856,31 +1168,38 @@ function decodeBuffer(
     return new TextDecoder(
       "utf-8"
     ).decode(buffer);
-
   }
-
 }
 
 
-
-function resetVertexDisplay(): void {
+function resetInteractionModes(): void {
 
   verticesVisible =
     false;
 
-
   verticesButton.textContent =
     "Show vertices";
 
-
-  verticesButton
-    .classList
-    .remove(
-      "active"
-    );
-
+  verticesButton.classList.remove(
+    "active"
+  );
 
   viewer.setVerticesVisible(
+    false
+  );
+
+
+  faceSelectMode =
+    false;
+
+  faceSelectButton.textContent =
+    "Select faces";
+
+  faceSelectButton.classList.remove(
+    "active"
+  );
+
+  viewer.setFaceSelectMode(
     false
   );
 
@@ -889,13 +1208,26 @@ function resetVertexDisplay(): void {
     null
   );
 
+  viewer.setHoveredFace(
+    null
+  );
+
+  viewer.setSelectedFace(
+    null
+  );
 
   setVertexRowHover(
     null
   );
 
-}
+  setFaceRowHover(
+    null
+  );
 
+  setFaceRowSelected(
+    null
+  );
+}
 
 
 function loadText(
@@ -908,26 +1240,24 @@ function loadText(
     statusText.textContent =
       `Parsing ${sourceName}...`;
 
-
     const parsed =
       parseSmd10125(
         text
       );
 
+    currentParsed =
+      parsed;
 
     viewer.load(
       parsed
     );
 
-
-    resetVertexDisplay();
-
+    resetInteractionModes();
 
     updateInfo(
       parsed,
       sourceName
     );
-
 
     renderVertexTable(
       parsed
@@ -936,55 +1266,44 @@ function loadText(
         .verticesWorld
     );
 
+    renderFaceTable(
+      parsed
+    );
 
     statusText.textContent =
-
       `Loaded ${sourceName}: ` +
-
       `${parsed.geometry.brep.verticesWorld.length} vertices, ` +
-
       `${parsed.geometry.brep.faces.length} faces.`;
 
   } catch (error) {
 
+    currentParsed =
+      null;
+
     viewer.clear();
 
-
-    resetVertexDisplay();
-
+    resetInteractionModes();
 
     const message =
-
       error instanceof Error
-
         ? error.message
-
         : String(error);
 
-
     objectInfo.innerHTML =
-
       `<dt>Error</dt>` +
-
       `<dd>${esc(message)}</dd>`;
-
 
     geometryInfo.innerHTML =
       "";
 
-
-    clearVertexTable(
-      "Could not inspect vertices."
+    clearInspector(
+      "Could not inspect geometry."
     );
-
 
     statusText.textContent =
       `Could not load ${sourceName}.`;
-
   }
-
 }
-
 
 
 async function loadFile(
@@ -994,40 +1313,53 @@ async function loadFile(
   const buffer =
     await file.arrayBuffer();
 
-
   loadText(
     decodeBuffer(buffer),
     file.name
   );
-
 }
 
 
-
 /*
- * -------------------------------------------------
- * 3D -> table hover
- * -------------------------------------------------
- *
- * renderer.ts detects which
- * vertex sphere is under the mouse.
- *
- * It sends its V-number here.
+ * 3D vertex -> table
  */
 viewer.setVertexHoverHandler(
   (index) => {
 
     setVertexRowHover(
-
       index,
-
       index !== null
-
     );
-
   }
 );
 
+
+/*
+ * 3D face -> face table
+ */
+viewer.setFaceHoverHandler(
+  (index) => {
+
+    setFaceRowHover(
+      index,
+      index !== null
+    );
+  }
+);
+
+
+/*
+ * 3D face selection -> table
+ */
+viewer.setFaceSelectionHandler(
+  (index) => {
+
+    setFaceRowSelected(
+      index,
+      index !== null
+    );
+  }
+);
 
 
 fileInput.addEventListener(
@@ -1035,21 +1367,15 @@ fileInput.addEventListener(
   () => {
 
     const file =
-      fileInput
-        .files?.[0];
-
+      fileInput.files?.[0];
 
     if (file) {
-
       void loadFile(
         file
       );
-
     }
-
   }
 );
-
 
 
 verticesButton.addEventListener(
@@ -1059,31 +1385,45 @@ verticesButton.addEventListener(
     verticesVisible =
       !verticesVisible;
 
-
     viewer.setVerticesVisible(
       verticesVisible
     );
 
-
     verticesButton.textContent =
-
       verticesVisible
-
         ? "Hide vertices"
-
         : "Show vertices";
 
-
-    verticesButton
-      .classList
-      .toggle(
-        "active",
-        verticesVisible
-      );
-
+    verticesButton.classList.toggle(
+      "active",
+      verticesVisible
+    );
   }
 );
 
+
+faceSelectButton.addEventListener(
+  "click",
+  () => {
+
+    faceSelectMode =
+      !faceSelectMode;
+
+    viewer.setFaceSelectMode(
+      faceSelectMode
+    );
+
+    faceSelectButton.textContent =
+      faceSelectMode
+        ? "Face SELECT : ON"
+        : "Select faces";
+
+    faceSelectButton.classList.toggle(
+      "active",
+      faceSelectMode
+    );
+  }
+);
 
 
 fitButton.addEventListener(
@@ -1091,7 +1431,6 @@ fitButton.addEventListener(
   () =>
     viewer.fit()
 );
-
 
 
 for (
@@ -1102,26 +1441,17 @@ for (
 ) {
 
   viewerElement.addEventListener(
-
     eventName,
-
     (event) => {
 
       event.preventDefault();
 
-
-      dropOverlay
-        .classList
-        .add(
-          "visible"
-        );
-
+      dropOverlay.classList.add(
+        "visible"
+      );
     }
-
   );
-
 }
-
 
 
 for (
@@ -1132,26 +1462,17 @@ for (
 ) {
 
   viewerElement.addEventListener(
-
     eventName,
-
     (event) => {
 
       event.preventDefault();
 
-
-      dropOverlay
-        .classList
-        .remove(
-          "visible"
-        );
-
+      dropOverlay.classList.remove(
+        "visible"
+      );
     }
-
   );
-
 }
-
 
 
 viewerElement.addEventListener(
@@ -1159,18 +1480,13 @@ viewerElement.addEventListener(
   (event) => {
 
     const file =
-      event
-        .dataTransfer
+      event.dataTransfer
         ?.files?.[0];
 
-
     if (file) {
-
       void loadFile(
         file
       );
-
     }
-
   }
 );

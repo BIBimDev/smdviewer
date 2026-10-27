@@ -281,7 +281,7 @@ input {
 
 
 /* =========================================================
-   V1.0.1 Day 3
+   V1.0.1 
    Vertex Inspector Table
    ========================================================= */
 
@@ -448,4 +448,184 @@ input {
   color: #7b8794;
 
   white-space: normal;
+}
+
+/* =========================================================
+   V1.0.1
+   Face inspection
+   ========================================================= */
+
+.inspector-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 8px;
+
+  margin-bottom: 6px;
+}
+
+.inspector-section-header .inspector-section-title {
+  margin-bottom: 0;
+}
+
+
+.face-section-header {
+  margin-top: 14px;
+}
+
+
+.face-table-wrap {
+  max-height: 240px;
+
+  overflow: auto;
+
+  border: 1px solid #d8dee5;
+
+  border-radius: 5px;
+
+  background: #ffffff;
+}
+
+
+.vertex-label.is-face-related {
+  border-color: #dc2626;
+
+  background: #fee2e2;
+
+  color: #991b1b;
+
+  font-weight: 700;
+}
+
+
+.vertex-label.is-hovered.is-face-related {
+  border-color: #f59e0b;
+
+  background: #fef3c7;
+
+  color: #92400e;
+}
+
+
+.vertex-row.is-face-related {
+  background: #fee2e2;
+}
+
+
+.vertex-row.is-face-related .vertex-id {
+  color: #b91c1c;
+
+  font-weight: 700;
+}
+
+
+.vertex-row.is-face-related.is-hovered {
+  background: #fef3c7;
+}
+
+
+.face-table th:nth-child(1),
+.face-table td:nth-child(1) {
+  width: 48px;
+}
+
+
+.face-table th:nth-child(2),
+.face-table td:nth-child(2) {
+  width: 105px;
+
+  text-align: left;
+}
+
+
+.face-table th:nth-child(3),
+.face-table td:nth-child(3) {
+  text-align: left;
+}
+
+
+.face-id,
+.face-vertices {
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+
+.face-name,
+.face-vertices {
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+}
+
+
+.face-row {
+  cursor: pointer;
+
+  transition:
+    background-color
+    100ms ease;
+}
+
+
+.face-row:hover,
+.face-row.is-hovered {
+  background: #fef3c7;
+}
+
+
+.face-row.is-hovered .face-id {
+  color: #92400e;
+
+  font-weight: 700;
+}
+
+
+.face-row.is-selected {
+  background: #dbeafe;
+}
+
+
+.face-row.is-selected .face-id {
+  color: #1d4ed8;
+
+  font-weight: 700;
+}
+
+
+.face-row.is-selected.is-hovered {
+  background: #fde68a;
+}
+
+
+.selected-face-info {
+  display: grid;
+
+  gap: 3px;
+
+  margin-top: 10px;
+
+  padding: 8px;
+
+  border: 1px solid #d8dee5;
+
+  border-radius: 5px;
+
+  background: #f8fafc;
+
+  color: #52606d;
+
+  font-size: 11px;
+
+  line-height: 1.35;
+}
+
+
+.selected-face-info strong {
+  color: #1f2933;
 }
