@@ -35,7 +35,7 @@ app.innerHTML = `
       <div>
         <div class="brand">
           STRAKON SMD Viewer
-          <span>V1.0.1-dev</span>
+          <span>V1.0.1</span>
         </div>
 
         <div class="subtitle">
@@ -73,6 +73,14 @@ app.innerHTML = `
           type="button"
         >
           Select faces
+        </button>
+
+        <button
+          id="faceColorsButton"
+          class="button"
+          type="button"
+        >
+          Face colors
         </button>
 
 
@@ -336,6 +344,11 @@ const faceSelectButton =
     "#faceSelectButton"
   );
 
+const faceColorsButton =
+  mustQuery<HTMLButtonElement>(
+    "#faceColorsButton"
+  );
+
 const fitButton =
   mustQuery<HTMLButtonElement>(
     "#fitButton"
@@ -381,6 +394,9 @@ let verticesVisible =
   false;
 
 let faceSelectMode =
+  false;
+
+let faceColorsEnabled =
   false;
 
 let hoveredVertexRow:
@@ -433,6 +449,204 @@ function formatCoordinate(
   }
 
   return normalized.toFixed(3);
+}
+
+function formatPlaneNumber(
+  value: number
+): string {
+
+  const normalized =
+    Math.abs(value) < 1e-9
+      ? 0
+      : value;
+
+
+  const rounded =
+    Math.round(normalized);
+
+
+  if (
+    Math.abs(
+      normalized - rounded
+    ) < 1e-9
+  ) {
+
+    return String(
+      rounded
+    );
+  }
+
+
+  return normalized
+    .toFixed(6)
+    .replace(
+      /0+$/,
+      ""
+    )
+    .replace(
+      /\.$/,
+      ""
+    );
+}
+
+
+function planeEquationText(
+  a: number,
+  b: number,
+  c: number,
+  d: number
+): string {
+
+  const epsilon =
+    1e-6;
+
+
+  /*
+   * Axis-aligned X plane.
+   */
+  if (
+    Math.abs(a) > epsilon
+    &&
+    Math.abs(b) < epsilon
+    &&
+    Math.abs(c) < epsilon
+  ) {
+
+    return (
+      `X = ` +
+      formatCoordinate(
+        -d / a
+      )
+    );
+  }
+
+
+  /*
+   * Axis-aligned Y plane.
+   */
+  if (
+    Math.abs(b) > epsilon
+    &&
+    Math.abs(a) < epsilon
+    &&
+    Math.abs(c) < epsilon
+  ) {
+
+    return (
+      `Y = ` +
+      formatCoordinate(
+        -d / b
+      )
+    );
+  }
+
+
+  /*
+   * Axis-aligned Z plane.
+   */
+  if (
+    Math.abs(c) > epsilon
+    &&
+    Math.abs(a) < epsilon
+    &&
+    Math.abs(b) < epsilon
+  ) {
+
+    return (
+      `Z = ` +
+      formatCoordinate(
+        -d / c
+      )
+    );
+  }
+
+
+  /*
+   * General planar face.
+   *
+   * Example:
+   *
+   * 0.371391x
+   * - 0.928477z
+   * + 1483.523367
+   * = 0
+   */
+
+  const terms:
+    string[] =
+    [];
+
+
+  function addTerm(
+    value: number,
+    symbol: string
+  ): void {
+
+    if (
+      Math.abs(value) <
+      epsilon
+    ) {
+
+      return;
+    }
+
+
+    const absoluteText =
+      formatPlaneNumber(
+        Math.abs(value)
+      );
+
+
+    const body =
+      `${absoluteText}${symbol}`;
+
+
+    if (
+      terms.length === 0
+    ) {
+
+      terms.push(
+        value < 0
+          ? `-${body}`
+          : body
+      );
+
+      return;
+    }
+
+
+    terms.push(
+      value < 0
+        ? `- ${body}`
+        : `+ ${body}`
+    );
+  }
+
+
+  addTerm(
+    a,
+    "x"
+  );
+
+  addTerm(
+    b,
+    "y"
+  );
+
+  addTerm(
+    c,
+    "z"
+  );
+
+  addTerm(
+    d,
+    ""
+  );
+
+
+  return (
+    `${terms.join(" ")} = 0`
+  );
 }
 
 
@@ -743,53 +957,196 @@ function updateSelectedFaceInfo(): void {
     return;
   }
 
-  const face =
+
+  const brep =
     currentParsed
       .geometry
-      .brep
-      .faces[
-        selectedFaceRow
-      ];
+      .brep;
+
+
+  const face =
+    brep.faces[
+      selectedFaceRow
+    ];
+
 
   if (!face) {
+
     selectedFaceInfo.textContent =
       "Selected face: none";
 
     return;
   }
 
+
   const faceName =
-    currentParsed
-      .geometry
-      .brep
-      .faceNames[
-        selectedFaceRow
-      ]
+    brep.faceNames[
+      selectedFaceRow
+    ]
     ??
     face.name
     ??
     "-";
 
-  const vertexText =
+
+  const plane =
+    face.plane
+    ??
+    brep.planes[
+      selectedFaceRow
+    ];
+
+
+  const rawPlaneText =
+    plane
+
+      ? (
+          `(` +
+          `${formatPlaneNumber(plane.a)}, ` +
+          `${formatPlaneNumber(plane.b)}, ` +
+          `${formatPlaneNumber(plane.c)}, ` +
+          `${formatPlaneNumber(plane.d)}` +
+          `)`
+        )
+
+      : "-";
+
+
+  const decodedPlaneText =
+    plane
+
+      ? planeEquationText(
+          plane.a,
+          plane.b,
+          plane.c,
+          plane.d
+        )
+
+      : "-";
+
+
+  const vertexRows =
     face.indices
       .map(
-        (index) =>
-          `V${index}`
+        (vertexIndex) => {
+
+          const vertex =
+            brep.verticesWorld[
+              vertexIndex
+            ];
+
+
+          if (!vertex) {
+
+            return "";
+          }
+
+
+          return `
+            <tr>
+
+              <td class="vertex-id">
+                V${vertexIndex}
+              </td>
+
+              <td class="number-cell">
+                ${formatCoordinate(
+                  vertex.x
+                )}
+              </td>
+
+              <td class="number-cell">
+                ${formatCoordinate(
+                  vertex.y
+                )}
+              </td>
+
+              <td class="number-cell">
+                ${formatCoordinate(
+                  vertex.z
+                )}
+              </td>
+
+            </tr>
+          `;
+        }
       )
-      .join(", ");
+      .join("");
+
 
   selectedFaceInfo.innerHTML = `
-    <strong>
-      Selected F${selectedFaceRow}
-    </strong>
 
-    <span>
-      ${esc(faceName)}
-    </span>
+    <div class="selected-face-heading">
 
-    <span>
-      ${esc(vertexText)}
-    </span>
+      <strong>
+        Selected F${selectedFaceRow}
+      </strong>
+
+      <span class="selected-face-name">
+        ${esc(faceName)}
+      </span>
+
+    </div>
+
+
+    <dl class="face-detail-list">
+
+      <dt>Plane</dt>
+
+      <dd class="mono">
+        ${esc(rawPlaneText)}
+      </dd>
+
+
+      <dt>Decoded</dt>
+
+      <dd class="mono">
+        ${esc(decodedPlaneText)}
+      </dd>
+
+
+      <dt>Vertices</dt>
+
+      <dd>
+        ${face.indices
+          .map(
+            (index) =>
+              `V${index}`
+          )
+          .join(", ")}
+      </dd>
+
+    </dl>
+
+
+    <div class="selected-face-coordinate-title">
+      Vertex coordinates
+    </div>
+
+
+    <div class="selected-face-coordinate-table">
+
+      <table class="inspector-table">
+
+        <thead>
+
+          <tr>
+            <th>Vertex</th>
+            <th>X</th>
+            <th>Y</th>
+            <th>Z</th>
+          </tr>
+
+        </thead>
+
+
+        <tbody>
+          ${vertexRows}
+        </tbody>
+
+      </table>
+
+    </div>
   `;
 }
 
@@ -1203,6 +1560,23 @@ function resetInteractionModes(): void {
     false
   );
 
+  faceColorsEnabled =
+  false;
+
+
+faceColorsButton.textContent =
+  "Face colors";
+
+
+faceColorsButton.classList.remove(
+  "active"
+);
+
+
+viewer.setFaceColorsEnabled(
+  false
+);
+
 
   viewer.setHoveredVertex(
     null
@@ -1421,6 +1795,35 @@ faceSelectButton.addEventListener(
     faceSelectButton.classList.toggle(
       "active",
       faceSelectMode
+    );
+  }
+);
+
+faceColorsButton.addEventListener(
+  "click",
+  () => {
+
+    faceColorsEnabled =
+      !faceColorsEnabled;
+
+
+    viewer.setFaceColorsEnabled(
+      faceColorsEnabled
+    );
+
+
+    faceColorsButton.textContent =
+
+      faceColorsEnabled
+
+        ? "Face colors : ON"
+
+        : "Face colors";
+
+
+    faceColorsButton.classList.toggle(
+      "active",
+      faceColorsEnabled
     );
   }
 );

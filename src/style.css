@@ -629,3 +629,7 @@ input {
 .selected-face-info strong {
   color: #1f2933;
 }
+
+/* #faceSelectButton {
+  display: none;
+} */

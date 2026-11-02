@@ -49,6 +49,10 @@ export interface ViewerHandle {
     enabled: boolean
   ): void;
 
+  setFaceColorsEnabled(
+  enabled: boolean
+): void;
+
   setHoveredFace(
     index: number | null
   ): void;
@@ -93,6 +97,33 @@ const HOVER_FACE_COLOR =
 const SELECTED_FACE_COLOR =
   0x60a5fa;
 
+const FACE_COLOR_PALETTE = [
+
+  0x90caf9,
+
+  0xa5d6a7,
+
+  0xffcc80,
+
+  0xce93d8,
+
+  0x80cbc4,
+
+  0xef9a9a,
+
+  0xfff59d,
+
+  0xb0bec5,
+
+  0x9fa8da,
+
+  0xbcaaa4,
+
+  0x80deea,
+
+  0xc5e1a5
+
+];
 
 type VertexNode =
   THREE.Mesh<
@@ -516,6 +547,9 @@ export function createViewer(
   let faceSelectMode =
     false;
 
+  let faceColorsEnabled =
+  false;
+
 
   let hoveredVertexIndex:
     number | null =
@@ -709,41 +743,78 @@ export function createViewer(
     );
   }
 
+  function baseFaceColor(
+  faceIndex: number
+  ): number {
+
+    if (
+      !faceColorsEnabled
+    ) {
+
+      return DEFAULT_FACE_COLOR;
+    }
+
+
+    return FACE_COLOR_PALETTE[
+      faceIndex
+      %
+      FACE_COLOR_PALETTE.length
+    ];
+  }
 
   function applyFaceAppearance(): void {
 
-    faceMeshes.forEach(
-      (
-        mesh,
-        index
-      ) => {
+      faceMeshes.forEach(
+        (
+          mesh,
+          index
+        ) => {
 
-        if (
-          index ===
-          hoveredFaceIndex
-        ) {
+          /*
+          * Priority:
+          *
+          * hover
+          *   >
+          * selected
+          *   >
+          * multicolor palette
+          *   >
+          * default gray
+          */
+
+          if (
+            index ===
+            hoveredFaceIndex
+          ) {
+
+            mesh.material.color.setHex(
+              HOVER_FACE_COLOR
+            );
+
+            return;
+          }
+
+
+          if (
+            index ===
+            selectedFaceIndex
+          ) {
+
+            mesh.material.color.setHex(
+              SELECTED_FACE_COLOR
+            );
+
+            return;
+          }
+
 
           mesh.material.color.setHex(
-            HOVER_FACE_COLOR
-          );
-
-        } else if (
-          index ===
-          selectedFaceIndex
-        ) {
-
-          mesh.material.color.setHex(
-            SELECTED_FACE_COLOR
-          );
-
-        } else {
-
-          mesh.material.color.setHex(
-            DEFAULT_FACE_COLOR
+            baseFaceColor(
+              index
+            )
           );
         }
-      }
-    );
+      );
   }
 
 
@@ -964,6 +1035,17 @@ export function createViewer(
 
     renderer.domElement.style.cursor =
       "";
+  }
+
+  function setFaceColorsEnabled(
+  enabled: boolean
+  ): void {
+
+    faceColorsEnabled =
+      enabled;
+
+
+    applyFaceAppearance();
   }
 
 
@@ -1968,6 +2050,8 @@ export function createViewer(
     setVertexHoverHandler,
 
     setFaceSelectMode,
+
+    setFaceColorsEnabled,
 
     setHoveredFace,
 
