@@ -35,7 +35,7 @@ app.innerHTML = `
       <div>
         <div class="brand">
           STRAKON SMD Viewer
-          <span>V1.0.1</span>
+         <span>V1.0.2-dev</span>
         </div>
 
         <div class="subtitle">
@@ -1437,18 +1437,32 @@ function renderFaceTable(
         }
       );
 
-
       /*
-       * Intentional V1.0.1 behavior:
-       *
-       * Table selection works even if
-       * Face Select mode is OFF.
-       *
-       * V1.0.2 fixes this later.
-       */
+      * V1.0.2:
+      *
+      * Table hover always works.
+      * Persistent table selection
+      * requires Face Select mode.
+      */
+
       row.addEventListener(
         "click",
         () => {
+
+          /*
+          * V1.0.2:
+          *
+          * Persistent face selection
+          * is available ONLY while
+          * Face Select mode is ON.
+          */
+          if (
+            !faceSelectMode
+          ) {
+
+            return;
+          }
+
 
           const nextSelection =
             selectedFaceRow ===
@@ -1456,9 +1470,11 @@ function renderFaceTable(
               ? null
               : index;
 
+
           setFaceRowSelected(
             nextSelection
           );
+
 
           viewer.setSelectedFace(
             nextSelection
@@ -1554,6 +1570,10 @@ function resetInteractionModes(): void {
 
   faceSelectButton.classList.remove(
     "active"
+  );
+
+  faceTableBody.classList.remove(
+    "selection-enabled"
   );
 
   viewer.setFaceSelectMode(
@@ -1783,6 +1803,21 @@ faceSelectButton.addEventListener(
     faceSelectMode =
       !faceSelectMode;
 
+        /*
+     * renderer.ts owns the actual
+     * mode transition.
+     *
+     * When changing to OFF it also
+     * clears:
+     *
+     * - hovered face
+     * - selected face
+     * - linked vertex highlighting
+     *
+     * The renderer callback then
+     * clears the selected table row.
+     */
+
     viewer.setFaceSelectMode(
       faceSelectMode
     );
@@ -1794,6 +1829,11 @@ faceSelectButton.addEventListener(
 
     faceSelectButton.classList.toggle(
       "active",
+      faceSelectMode
+    );
+
+    faceTableBody.classList.toggle(
+      "selection-enabled",
       faceSelectMode
     );
   }

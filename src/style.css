@@ -565,7 +565,7 @@ input {
 
 
 .face-row {
-  cursor: pointer;
+  cursor: default;
 
   transition:
     background-color
@@ -633,3 +633,13 @@ input {
 /* #faceSelectButton {
   display: none;
 } */
+
+/* =========================================================
+   V1.0.2 Day 1
+   Face selection mode
+   ========================================================= */
+
+#faceTableBody.selection-enabled
+.face-row {
+  cursor: pointer;
+}

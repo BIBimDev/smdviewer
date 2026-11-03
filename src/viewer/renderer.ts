@@ -1004,37 +1004,50 @@ export function createViewer(
   }
 
 
-  function setFaceSelectMode(
-    enabled: boolean
+function setFaceSelectMode(
+  enabled: boolean
   ): void {
 
-    faceSelectMode =
-      enabled;
+      faceSelectMode =
+        enabled;
 
-    if (
-      enabled
-    ) {
 
-      emitVertexHover(
-        null
-      );
+      if (
+        enabled
+      ) {
 
-    } else {
+        /*
+        * Face mode has priority
+        * over vertex picking.
+        */
+        emitVertexHover(
+          null
+        );
 
-      /*
-       * Important V1.0.1 behavior:
-       *
-       * Clear temporary hover,
-       * but DO NOT clear the
-       * selected face.
-       */
-      emitFaceHover(
-        null
-      );
-    }
+      } else {
 
-    renderer.domElement.style.cursor =
-      "";
+        /*
+        * V1.0.2:
+        *
+        * Leaving Face Select mode
+        * returns the face inspector
+        * to a completely neutral
+        * state.
+        */
+
+        emitFaceHover(
+          null
+        );
+
+
+        emitFaceSelection(
+          null
+        );
+      }
+
+
+      renderer.domElement.style.cursor =
+        "";
   }
 
   function setFaceColorsEnabled(
