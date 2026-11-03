@@ -732,3 +732,69 @@ input {
 .vertex-row.is-selected.is-hovered {
   background: #fef3c7;
 }
+
+/* =========================================================
+   V1.0.2 Day 3
+   Interactive vertex coordinate labels
+   ========================================================= */
+
+
+/*
+ * The CSS2D renderer covers the complete
+ * viewer but its root remains:
+ *
+ * pointer-events: none
+ *
+ * Only actual coordinate labels become
+ * mouse targets.
+ */
+.vertex-label {
+  pointer-events: auto;
+
+  cursor: default;
+
+  user-select: none;
+}
+
+
+/*
+ * While Show Vertices is ON the label
+ * can create persistent selection.
+ */
+.vertex-label-layer.vertex-selection-enabled
+.vertex-label {
+  cursor: pointer;
+}
+
+
+/*
+ * Face Select mode has priority over
+ * vertex-label interaction.
+ *
+ * Mouse events pass through labels to
+ * the WebGL canvas beneath them.
+ */
+.vertex-label-layer.face-selection-active
+.vertex-label {
+  pointer-events: none;
+
+  cursor: default;
+}
+
+
+/*
+ * Make the interactive label slightly
+ * more responsive without changing the
+ * V1.0.1 visual design yet.
+ *
+ * Day 4 will perform the larger visual
+ * cleanup.
+ */
+.vertex-label {
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease,
+    color 100ms ease,
+    opacity 100ms ease,
+    box-shadow 100ms ease;
+}
