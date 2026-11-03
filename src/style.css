@@ -86,20 +86,22 @@ input {
   background: #f5f7f9;
 }
 
-.button.primary {
+.button.primary,
+.button.active {
   border-color: #2563eb;
   background: #2563eb;
   color: white;
 }
 
-.button.primary:hover {
+.button.primary:hover,
+.button.active:hover {
   background: #1d4ed8;
 }
 
 .content {
   min-height: 0;
   display: grid;
-  grid-template-columns: 310px minmax(0, 1fr);
+  grid-template-columns: 390px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -157,12 +159,87 @@ input {
   min-height: 0;
   background: #f4f6f8;
   outline: none;
+  overflow: hidden;
 }
 
 .viewer canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.viewer-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.label-layer {
+  z-index: 2;
+}
+
+ .vertex-label {
+  padding: 2px 5px;
+  border: 1px solid rgb(100 116 139 / 0.55);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.9);
+  color: #334155;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.14);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+  transform: translate(8px, -8px);
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 90ms ease, background 90ms ease, border-color 90ms ease, color 90ms ease;
+}
+
+.vertex-label.is-compact {
+  min-width: 23px;
+  padding: 1px 4px;
+  border-color: rgb(148 163 184 / 0.5);
+  background: rgb(255 255 255 / 0.74);
+  color: #64748b;
+  box-shadow: none;
+  font-size: 9px;
+  text-align: center;
+}
+
+.vertex-label.is-muted {
+  opacity: 0.34;
+  filter: grayscale(0.6);
+}
+
+.vertex-label.is-face-hover-vertex {
+  border-color: #0ea5e9;
+  background: rgb(240 249 255 / 0.98);
+  color: #075985;
+  font-weight: 700;
+}
+
+.vertex-label.is-face-vertex {
+  border-color: #f97316;
+  background: rgb(255 247 237 / 0.98);
+  color: #9a3412;
+  font-weight: 800;
+}
+
+.vertex-label.is-hovered {
+  border-color: #ca8a04;
+  background: rgb(254 249 195 / 0.99);
+  color: #713f12;
+  font-weight: 800;
+  z-index: 3;
+}
+
+.vertex-label.is-selected-vertex {
+  border-color: #ef4444;
+  background: rgb(254 242 242 / 0.99);
+  color: #991b1b;
+  font-weight: 800;
+  z-index: 4;
 }
 
 .drop-overlay {
@@ -184,6 +261,215 @@ input {
   display: grid;
 }
 
+.inspector-help {
+  margin-top: -2px !important;
+  margin-bottom: 10px !important;
+}
+
+.inspector-section {
+  margin-top: 8px;
+  border: 1px solid #dbe2e8;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.inspector-section summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  background: #f7f9fb;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.count-badge {
+  display: inline-flex;
+  min-width: 22px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e5eaf0;
+  color: #52606d;
+  font-size: 10px;
+}
+
+.table-scroll {
+  max-height: 230px;
+  overflow: auto;
+  border-top: 1px solid #e1e6eb;
+}
+
+.face-table-scroll {
+  max-height: 250px;
+}
+
+.compact-table-scroll {
+  max-height: 190px;
+  border: 1px solid #e1e6eb;
+  border-radius: 5px;
+}
+
+.inspector-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 11px;
+}
+
+.inspector-table th,
+.inspector-table td {
+  padding: 6px 7px;
+  border-bottom: 1px solid #edf0f3;
+  text-align: right;
+  vertical-align: middle;
+}
+
+.inspector-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f7f9fb;
+  color: #52606d;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.inspector-table th:first-child,
+.inspector-table td:first-child {
+  text-align: left;
+}
+
+.inspector-table tbody tr {
+  cursor: default;
+  transition: background 100ms ease;
+}
+
+.inspector-table tbody tr:hover,
+.inspector-table tbody tr.is-hovered {
+  background: #fff7cc;
+}
+
+.inspector-table tbody tr.is-face-vertex {
+  background: #fee2e2;
+  font-weight: 700;
+}
+
+
+.inspector-section.selection-enabled tbody tr[data-vertex-index],
+.inspector-section.selection-enabled tbody tr[data-face-index] {
+  cursor: pointer;
+}
+
+.inspector-table tbody tr.is-vertex-selected {
+  background: #fee2e2;
+  box-shadow: inset 3px 0 #ef4444;
+  color: #991b1b;
+  font-weight: 800;
+}
+
+.inspector-table tbody tr.is-selected {
+  background: #dbeafe;
+  box-shadow: inset 3px 0 #2563eb;
+  font-weight: 700;
+}
+
+.inspector-table tbody tr:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: -2px;
+}
+
+.vertex-id,
+.face-id {
+  font-weight: 700;
+}
+
+.face-table th:nth-child(1),
+.face-table td:nth-child(1) {
+  width: 48px;
+}
+
+.face-table th:nth-child(2),
+.face-table td:nth-child(2) {
+  width: 130px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.face-table th:nth-child(3),
+.face-table td:nth-child(3) {
+  text-align: left;
+}
+
+.face-vertices {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.empty-cell {
+  padding: 12px !important;
+  color: #7b8794;
+  text-align: center !important;
+  font-style: italic;
+}
+
+.selected-face-details {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #bfd3f2;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+.selected-face-details.hidden {
+  display: none;
+}
+
+.selected-face-header {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #1d4ed8;
+}
+
+.selected-face-meta {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 5px 7px;
+  margin: 0 0 10px;
+  font-size: 11px;
+}
+
+.selected-face-meta dt {
+  color: #687782;
+}
+
+.selected-face-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.selected-face-coordinates-title {
+  margin: 8px 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 4px 6px;
+  font-size: 10px;
+}
+
 .statusbar {
   min-height: 30px;
   display: flex;
@@ -195,12 +481,7 @@ input {
   font-size: 12px;
 }
 
-#plainSample,
-#pocketSample {
-  display: none;
-}
-
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .toolbar {
     align-items: flex-start;
     flex-direction: column;
@@ -208,663 +489,11 @@ input {
 
   .content {
     grid-template-columns: 1fr;
-    grid-template-rows: 250px minmax(0, 1fr);
+    grid-template-rows: 360px minmax(0, 1fr);
   }
 
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid #d7dde3;
   }
-}
-
-/* V1.0.1 development - active toolbar mode */
-
-.button.active {
-  border-color: #2563eb;
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
-/* =========================================================
-   V1.0.1
-   Vertex coordinate labels
-   ========================================================= */
-
-.vertex-label-layer {
-  position: absolute;
-  inset: 0;
-
-  overflow: hidden;
-
-  pointer-events: none;
-}
-
-
-.vertex-label {
-  padding: 2px 5px;
-
-  border: 1px solid rgba(37, 99, 235, 0.55);
-
-  border-radius: 3px;
-
-  background:
-    rgba(255, 255, 255, 0.94);
-
-  color: #1e3a8a;
-
-  font-family:
-    Consolas,
-    "Courier New",
-    monospace;
-
-  font-size: 11px;
-
-  line-height: 1.25;
-
-  white-space: nowrap;
-
-  pointer-events: none;
-
-  user-select: none;
-
-  box-shadow:
-    0 1px 3px
-    rgba(0, 0, 0, 0.14);
-
-  /*
-   * Move the label slightly away
-   * from the exact vertex position.
-   */
-  transform:
-    translate(8px, -8px);
-}
-
-
-/* =========================================================
-   V1.0.1 
-   Vertex Inspector Table
-   ========================================================= */
-
-
-.inspector-panel {
-  padding-bottom: 10px;
-}
-
-
-.inspector-panel-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  gap: 8px;
-
-  margin-bottom: 8px;
-}
-
-
-.inspector-panel-title h2 {
-  margin: 0;
-}
-
-
-.inspector-badge {
-  display: inline-flex;
-
-  min-width: 24px;
-  height: 22px;
-
-  align-items: center;
-  justify-content: center;
-
-  padding: 0 7px;
-
-  border-radius: 999px;
-
-  background: #eef2f7;
-
-  color: #52606d;
-
-  font-size: 11px;
-  font-weight: 700;
-}
-
-
-.inspector-section-title {
-  margin-bottom: 6px;
-
-  color: #52606d;
-
-  font-size: 11px;
-  font-weight: 700;
-
-  letter-spacing: 0.02em;
-
-  text-transform: uppercase;
-}
-
-
-.vertex-table-wrap {
-  max-height: 270px;
-
-  overflow: auto;
-
-  border: 1px solid #d8dee5;
-
-  border-radius: 5px;
-
-  background: #ffffff;
-}
-
-
-.inspector-table {
-  width: 100%;
-
-  border-collapse: collapse;
-
-  table-layout: fixed;
-
-  font-size: 11px;
-}
-
-
-.inspector-table th,
-.inspector-table td {
-  padding: 6px 7px;
-
-  border-bottom:
-    1px solid #e6ebf0;
-
-  text-align: right;
-
-  white-space: nowrap;
-}
-
-
-.inspector-table th:first-child,
-.inspector-table td:first-child {
-  text-align: left;
-}
-
-
-.inspector-table thead th {
-  position: sticky;
-
-  top: 0;
-
-  z-index: 1;
-
-  background: #f7f9fb;
-
-  color: #52606d;
-
-  font-size: 10px;
-  font-weight: 700;
-}
-
-
-.inspector-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-
-.vertex-row {
-  cursor: default;
-
-  transition:
-    background-color
-    100ms ease;
-}
-
-
-.vertex-row:hover,
-.vertex-row.is-hovered {
-  background: #dbeafe;
-}
-
-
-.vertex-row.is-hovered .vertex-id {
-  color: #1d4ed8;
-
-  font-weight: 700;
-}
-
-
-.vertex-id,
-.number-cell {
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-}
-
-
-.empty-row td {
-  padding: 12px 8px;
-
-  text-align: center !important;
-
-  color: #7b8794;
-
-  white-space: normal;
-}
-
-/* =========================================================
-   V1.0.1
-   Face inspection
-   ========================================================= */
-
-.inspector-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  gap: 8px;
-
-  margin-bottom: 6px;
-}
-
-.inspector-section-header .inspector-section-title {
-  margin-bottom: 0;
-}
-
-
-.face-section-header {
-  margin-top: 14px;
-}
-
-
-.face-table-wrap {
-  max-height: 240px;
-
-  overflow: auto;
-
-  border: 1px solid #d8dee5;
-
-  border-radius: 5px;
-
-  background: #ffffff;
-}
-
-
-.vertex-label.is-face-related {
-  border-color: #dc2626;
-
-  background: #fee2e2;
-
-  color: #991b1b;
-
-  font-weight: 700;
-}
-
-
-.vertex-label.is-hovered.is-face-related {
-  border-color: #f59e0b;
-
-  background: #fef3c7;
-
-  color: #92400e;
-}
-
-
-.vertex-row.is-face-related {
-  background: #fee2e2;
-}
-
-
-.vertex-row.is-face-related .vertex-id {
-  color: #b91c1c;
-
-  font-weight: 700;
-}
-
-
-.vertex-row.is-face-related.is-hovered {
-  background: #fef3c7;
-}
-
-
-.face-table th:nth-child(1),
-.face-table td:nth-child(1) {
-  width: 48px;
-}
-
-
-.face-table th:nth-child(2),
-.face-table td:nth-child(2) {
-  width: 105px;
-
-  text-align: left;
-}
-
-
-.face-table th:nth-child(3),
-.face-table td:nth-child(3) {
-  text-align: left;
-}
-
-
-.face-id,
-.face-vertices {
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-}
-
-
-.face-name,
-.face-vertices {
-  overflow: hidden;
-
-  text-overflow: ellipsis;
-}
-
-
-.face-row {
-  cursor: default;
-
-  transition:
-    background-color
-    100ms ease;
-}
-
-
-.face-row:hover,
-.face-row.is-hovered {
-  background: #fef3c7;
-}
-
-
-.face-row.is-hovered .face-id {
-  color: #92400e;
-
-  font-weight: 700;
-}
-
-
-.face-row.is-selected {
-  background: #dbeafe;
-}
-
-
-.face-row.is-selected .face-id {
-  color: #1d4ed8;
-
-  font-weight: 700;
-}
-
-
-.face-row.is-selected.is-hovered {
-  background: #fde68a;
-}
-
-
-.selected-face-info {
-  display: grid;
-
-  gap: 3px;
-
-  margin-top: 10px;
-
-  padding: 8px;
-
-  border: 1px solid #d8dee5;
-
-  border-radius: 5px;
-
-  background: #f8fafc;
-
-  color: #52606d;
-
-  font-size: 11px;
-
-  line-height: 1.35;
-}
-
-
-.selected-face-info strong {
-  color: #1f2933;
-}
-
-/* #faceSelectButton {
-  display: none;
-} */
-
-/* =========================================================
-   V1.0.2 Day 1
-   Face selection mode
-   ========================================================= */
-
-#faceTableBody.selection-enabled
-.face-row {
-  cursor: pointer;
-}
-
-/* =========================================================
-   V1.0.2 Day 2
-   Vertex selection
-   ========================================================= */
-
-
-/*
- * Vertex rows become selectable
- * only while Show Vertices is ON.
- */
-#vertexTableBody.selection-enabled
-.vertex-row {
-  cursor: pointer;
-}
-
-
-/*
- * Persistent vertex table selection.
- */
-.vertex-row.is-selected {
-  background: #ede9fe;
-}
-
-
-.vertex-row.is-selected
-.vertex-id {
-  color: #6d28d9;
-
-  font-weight: 700;
-}
-
-
-/*
- * Selected 3D coordinate label.
- */
-.vertex-label.is-selected {
-  border-color: #7c3aed;
-
-  background: #ede9fe;
-
-  color: #5b21b6;
-
-  font-weight: 700;
-
-  box-shadow:
-    0 0 0 2px
-    rgba(124, 58, 237, 0.22);
-}
-
-
-/*
- * When one vertex is persistently
- * selected, other visible labels
- * become visually secondary.
- */
-.vertex-label.is-muted {
-  border-color:
-    rgba(148, 163, 184, 0.35);
-
-  background:
-    rgba(248, 250, 252, 0.72);
-
-  color: #94a3b8;
-
-  opacity: 0.42;
-}
-
-
-/*
- * Hover remains the highest-priority
- * temporary visual state.
- */
-.vertex-label.is-hovered {
-  border-color: #f59e0b;
-
-  background: #fef3c7;
-
-  color: #92400e;
-
-  opacity: 1;
-
-  font-weight: 700;
-}
-
-
-.vertex-row.is-selected.is-hovered {
-  background: #fef3c7;
-}
-
-/* =========================================================
-   V1.0.2 Day 3
-   Interactive vertex coordinate labels
-   ========================================================= */
-
-
-/*
- * The CSS2D renderer covers the complete
- * viewer but its root remains:
- *
- * pointer-events: none
- *
- * Only actual coordinate labels become
- * mouse targets.
- */
-.vertex-label {
-  pointer-events: auto;
-
-  cursor: default;
-
-  user-select: none;
-}
-
-
-/*
- * While Show Vertices is ON the label
- * can create persistent selection.
- */
-.vertex-label-layer.vertex-selection-enabled
-.vertex-label {
-  cursor: pointer;
-}
-
-
-/*
- * Face Select mode has priority over
- * vertex-label interaction.
- *
- * Mouse events pass through labels to
- * the WebGL canvas beneath them.
- */
-.vertex-label-layer.face-selection-active
-.vertex-label {
-  pointer-events: none;
-
-  cursor: default;
-}
-
-
-/*
- * Make the interactive label slightly
- * more responsive without changing the
- * V1.0.1 visual design yet.
- *
- * Day 4 will perform the larger visual
- * cleanup.
- */
-.vertex-label {
-  transition:
-    background-color 100ms ease,
-    border-color 100ms ease,
-    color 100ms ease,
-    opacity 100ms ease,
-    box-shadow 100ms ease;
-}
-
-
-/* =========================================================
-   V1.0.2 Day 4
-   Compact vertex visualization
-   ========================================================= */
-
-
-/*
- * Normal labels are deliberately tiny.
- *
- * Example:
- * V8
- */
-.vertex-label {
-  min-width: 0;
-
-  padding:
-    2px 4px;
-
-  border-radius:
-    4px;
-
-  font-size:
-    9px;
-
-  line-height:
-    1.15;
-
-  white-space:
-    nowrap;
-}
-
-
-/*
- * Hovered, selected and face-related
- * labels expand to the complete:
- *
- * V8 (375, -325, 1847.804)
- */
-.vertex-label.is-expanded {
-  padding:
-    3px 6px;
-
-  font-size:
-    10px;
-}
-
-
-/*
- * Compact normal labels should be
- * visually secondary to the model.
- */
-.vertex-label:not(.is-expanded) {
-  opacity:
-    0.78;
-}
-
-
-/*
- * Active labels always return to
- * full visibility.
- */
-.vertex-label.is-expanded,
-.vertex-label.is-hovered,
-.vertex-label.is-selected,
-.vertex-label.is-face-related {
-  opacity:
-    1;
 }
