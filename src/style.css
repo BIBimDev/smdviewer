@@ -643,3 +643,92 @@ input {
 .face-row {
   cursor: pointer;
 }
+
+/* =========================================================
+   V1.0.2 Day 2
+   Vertex selection
+   ========================================================= */
+
+
+/*
+ * Vertex rows become selectable
+ * only while Show Vertices is ON.
+ */
+#vertexTableBody.selection-enabled
+.vertex-row {
+  cursor: pointer;
+}
+
+
+/*
+ * Persistent vertex table selection.
+ */
+.vertex-row.is-selected {
+  background: #ede9fe;
+}
+
+
+.vertex-row.is-selected
+.vertex-id {
+  color: #6d28d9;
+
+  font-weight: 700;
+}
+
+
+/*
+ * Selected 3D coordinate label.
+ */
+.vertex-label.is-selected {
+  border-color: #7c3aed;
+
+  background: #ede9fe;
+
+  color: #5b21b6;
+
+  font-weight: 700;
+
+  box-shadow:
+    0 0 0 2px
+    rgba(124, 58, 237, 0.22);
+}
+
+
+/*
+ * When one vertex is persistently
+ * selected, other visible labels
+ * become visually secondary.
+ */
+.vertex-label.is-muted {
+  border-color:
+    rgba(148, 163, 184, 0.35);
+
+  background:
+    rgba(248, 250, 252, 0.72);
+
+  color: #94a3b8;
+
+  opacity: 0.42;
+}
+
+
+/*
+ * Hover remains the highest-priority
+ * temporary visual state.
+ */
+.vertex-label.is-hovered {
+  border-color: #f59e0b;
+
+  background: #fef3c7;
+
+  color: #92400e;
+
+  opacity: 1;
+
+  font-weight: 700;
+}
+
+
+.vertex-row.is-selected.is-hovered {
+  background: #fef3c7;
+}

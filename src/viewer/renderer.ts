@@ -38,7 +38,18 @@ export interface ViewerHandle {
     index: number | null
   ): void;
 
+  setSelectedVertex(
+    index: number | null
+  ): void;
+
   setVertexHoverHandler(
+    handler:
+      (
+        index: number | null
+      ) => void
+  ): void;
+
+  setVertexSelectionHandler(
     handler:
       (
         index: number | null
@@ -87,6 +98,12 @@ const HOVER_VERTEX_COLOR =
 
 const FACE_VERTEX_COLOR =
   0xdc2626;
+
+const SELECTED_VERTEX_COLOR =
+  0x7c3aed;
+
+const MUTED_VERTEX_COLOR =
+  0x94a3b8;
 
 const DEFAULT_FACE_COLOR =
   0xc9cdd2;
@@ -554,6 +571,10 @@ export function createViewer(
   let hoveredVertexIndex:
     number | null =
     null;
+  
+  let selectedVertexIndex:
+  number | null =
+  null;
 
   let hoveredFaceIndex:
     number | null =
@@ -577,6 +598,14 @@ export function createViewer(
     (
       index: number | null
     ) => void =
+    () => undefined;
+  
+  let vertexSelectionHandler:
+
+    (
+      index: number | null
+    ) => void =
+
     () => undefined;
 
 
@@ -647,6 +676,22 @@ export function createViewer(
     const faceVertices =
       activeFaceVertexSet();
 
+
+    /*
+    * Persistent selection only has
+    * the "mute others" effect while
+    * Show Vertices is ON.
+    */
+    const selectionActive =
+
+      verticesVisible
+
+      &&
+
+      selectedVertexIndex !==
+        null;
+
+
     vertexNodes.forEach(
       (
         node,
@@ -657,15 +702,59 @@ export function createViewer(
           index ===
           hoveredVertexIndex;
 
+
+        const isSelected =
+          index ===
+          selectedVertexIndex;
+
+
         const isFaceVertex =
           faceVertices.has(
             index
           );
 
+
+        /*
+        * V1.0.2 Day 2:
+        *
+        * A vertex can be visible because:
+        *
+        * 1. Show Vertices is ON
+        * 2. table hover is temporarily
+        *    inspecting it
+        * 3. it is persistently selected
+        * 4. it contributes to an active face
+        */
         node.visible =
+
           verticesVisible
+
           ||
+
+          isHovered
+
+          ||
+
+          isSelected
+
+          ||
+
           isFaceVertex;
+
+
+        /*
+        * Appearance priority:
+        *
+        * hover
+        *   >
+        * selected vertex
+        *   >
+        * face-related vertex
+        *   >
+        * muted vertex
+        *   >
+        * normal vertex
+        */
 
         if (
           isHovered
@@ -675,9 +764,25 @@ export function createViewer(
             HOVER_VERTEX_COLOR
           );
 
+
           node.scale.setScalar(
             2.5
           );
+
+
+        } else if (
+          isSelected
+        ) {
+
+          node.material.color.setHex(
+            SELECTED_VERTEX_COLOR
+          );
+
+
+          node.scale.setScalar(
+            2.2
+          );
+
 
         } else if (
           isFaceVertex
@@ -687,15 +792,32 @@ export function createViewer(
             FACE_VERTEX_COLOR
           );
 
+
           node.scale.setScalar(
             1.8
           );
+
+
+        } else if (
+          selectionActive
+        ) {
+
+          node.material.color.setHex(
+            MUTED_VERTEX_COLOR
+          );
+
+
+          node.scale.setScalar(
+            0.85
+          );
+
 
         } else {
 
           node.material.color.setHex(
             DEFAULT_VERTEX_COLOR
           );
+
 
           node.scale.setScalar(
             1
@@ -711,17 +833,60 @@ export function createViewer(
         index
       ) => {
 
+        const isHovered =
+          index ===
+          hoveredVertexIndex;
+
+
+        const isSelected =
+          index ===
+          selectedVertexIndex;
+
+
+        const isFaceVertex =
+          faceVertices.has(
+            index
+          );
+
+
+        const isMuted =
+
+          selectionActive
+
+          &&
+
+          !isSelected
+
+          &&
+
+          !isHovered
+
+          &&
+
+          !isFaceVertex;
+
+
         label.classList.toggle(
           "is-hovered",
-          index ===
-            hoveredVertexIndex
+          isHovered
         );
+
+
+        label.classList.toggle(
+          "is-selected",
+          isSelected
+        );
+
 
         label.classList.toggle(
           "is-face-related",
-          faceVertices.has(
-            index
-          )
+          isFaceVertex
+        );
+
+
+        label.classList.toggle(
+          "is-muted",
+          isMuted
         );
       }
     );
@@ -734,8 +899,21 @@ export function createViewer(
       ) => {
 
         labelObject.visible =
+
           verticesVisible
+
           ||
+
+          index ===
+            hoveredVertexIndex
+
+          ||
+
+          index ===
+            selectedVertexIndex
+
+          ||
+
           faceVertices.has(
             index
           );
@@ -845,6 +1023,44 @@ export function createViewer(
     applyVertexAppearance();
   }
 
+  function setSelectedVertex(
+  index: number | null
+  ): void {
+
+    const normalizedIndex =
+
+      index !== null
+
+      &&
+
+      index >= 0
+
+      &&
+
+      index <
+        vertexNodes.length
+
+        ? index
+
+        : null;
+
+
+    if (
+      selectedVertexIndex ===
+      normalizedIndex
+    ) {
+
+      return;
+    }
+
+
+    selectedVertexIndex =
+      normalizedIndex;
+
+
+    applyVertexAppearance();
+  }
+
 
   function emitVertexHover(
     index: number | null
@@ -869,6 +1085,25 @@ export function createViewer(
     );
   }
 
+  function emitVertexSelection(
+    index: number | null
+  ): void {
+
+    setSelectedVertex(
+      index
+    );
+
+
+    /*
+    * Inform main.ts so the
+    * matching table row gets
+    * persistent selection styling.
+    */
+    vertexSelectionHandler(
+      index
+    );
+  }
+
 
   function setVertexHoverHandler(
     handler:
@@ -878,6 +1113,19 @@ export function createViewer(
   ): void {
 
     vertexHoverHandler =
+      handler;
+  }
+
+  function setVertexSelectionHandler(
+
+    handler:
+      (
+        index: number | null
+      ) => void
+
+  ): void {
+
+    vertexSelectionHandler =
       handler;
   }
 
@@ -1065,6 +1313,10 @@ function setFaceSelectMode(
   function clearVertexRoot(): void {
 
     emitVertexHover(
+      null
+    );
+
+    emitVertexSelection(
       null
     );
 
@@ -1671,8 +1923,16 @@ function setFaceSelectMode(
     verticesVisible =
       visible;
 
-    applyVertexAppearance();
 
+    /*
+    * Turning Show Vertices OFF means:
+    *
+    * - no persistent vertex selection
+    * - no current vertex hover
+    *
+    * Temporary table hover can create
+    * a new hover again afterwards.
+    */
     if (
       !visible
     ) {
@@ -1681,9 +1941,21 @@ function setFaceSelectMode(
         null
       );
 
-      renderer.domElement.style.cursor =
+
+      emitVertexSelection(
+        null
+      );
+
+
+      renderer
+        .domElement
+        .style
+        .cursor =
         "";
     }
+
+
+    applyVertexAppearance();
   }
 
 
@@ -1726,6 +1998,69 @@ function setFaceSelectMode(
       +
       1;
   }
+
+  function raycastVertex(
+    event: PointerEvent
+  ): number | null {
+
+    updatePointer(
+      event
+    );
+
+
+    raycaster.setFromCamera(
+      pointer,
+      camera
+    );
+
+
+    /*
+    * Only currently visible vertex
+    * nodes should be pickable.
+    */
+    const visibleNodes =
+      vertexNodes.filter(
+        (node) =>
+          node.visible
+      );
+
+
+    const intersections =
+      raycaster.intersectObjects(
+        visibleNodes,
+        false
+      );
+
+
+    const first =
+      intersections[0];
+
+
+    if (
+      !first
+    ) {
+
+      return null;
+    }
+
+
+    const index =
+      Number(
+        first
+          .object
+          .userData
+          .vertexIndex
+      );
+
+
+    return Number.isInteger(
+      index
+    )
+      ? index
+      : null;
+  }
+
+  
 
 
   function raycastFace(
@@ -1771,129 +2106,150 @@ function setFaceSelectMode(
   }
 
 
-  function handlePointerMove(
-    event: PointerEvent
-  ): void {
+function handlePointerMove(
+  event: PointerEvent
+): void {
 
-    /*
-     * Face mode has priority.
-     */
-    if (
-      faceSelectMode
-    ) {
+  /*
+   * ---------------------------------------------
+   * FACE MODE
+   * ---------------------------------------------
+   *
+   * Face Select mode has priority.
+   *
+   * While Face Select is ON:
+   *
+   * - vertex hover is cleared
+   * - mouse movement raycasts faces
+   * - hovered face is reported to main.ts
+   */
+  if (
+    faceSelectMode
+  ) {
 
-      emitVertexHover(
-        null
-      );
-
-      const faceIndex =
-        raycastFace(
-          event
-        );
-
-      emitFaceHover(
-        faceIndex
-      );
-
-      renderer.domElement.style.cursor =
-        faceIndex !== null
-          ? "pointer"
-          : "";
-
-      return;
-    }
-
-
-    /*
-     * Face mode OFF:
-     * preserve Day 3 vertex hover.
-     */
-    emitFaceHover(
+    emitVertexHover(
       null
     );
 
 
-    if (
-      !verticesVisible
-      ||
-      vertexNodes.length === 0
-    ) {
-
-      emitVertexHover(
-        null
+    const faceIndex =
+      raycastFace(
+        event
       );
 
-      renderer.domElement.style.cursor =
-        "";
 
-      return;
-    }
+    emitFaceHover(
+      faceIndex
+    );
 
 
-    updatePointer(
+    renderer
+      .domElement
+      .style
+      .cursor =
+
+      faceIndex !== null
+
+        ? "pointer"
+
+        : "";
+
+
+    return;
+  }
+
+
+  /*
+   * ---------------------------------------------
+   * FACE MODE OFF
+   * ---------------------------------------------
+   *
+   * Clear any temporary 3D face hover.
+   *
+   * Persistent face selection should already
+   * have been cleared when Face Select mode
+   * was turned OFF by setFaceSelectMode().
+   */
+  emitFaceHover(
+    null
+  );
+
+
+  /*
+   * ---------------------------------------------
+   * VERTEX MODE
+   * ---------------------------------------------
+   *
+   * Direct 3D vertex hovering is available
+   * only while Show Vertices is ON.
+   *
+   * When Show Vertices is OFF, temporary
+   * vertex inspection is initiated from the
+   * vertex TABLE instead.
+   */
+  if (
+    !verticesVisible
+
+    ||
+
+    vertexNodes.length === 0
+  ) {
+
+    emitVertexHover(
+      null
+    );
+
+
+    renderer
+      .domElement
+      .style
+      .cursor =
+      "";
+
+
+    return;
+  }
+
+
+  /*
+   * Find the visible vertex currently
+   * underneath the pointer.
+   */
+  const vertexIndex =
+    raycastVertex(
       event
     );
 
-    raycaster.setFromCamera(
-      pointer,
-      camera
-    );
 
-    const intersections =
-      raycaster.intersectObjects(
-        vertexNodes,
-        false
-      );
-
-    const first =
-      intersections[0];
-
-    if (
-      !first
-    ) {
-
-      emitVertexHover(
-        null
-      );
-
-      renderer.domElement.style.cursor =
-        "";
-
-      return;
-    }
+  /*
+   * This updates:
+   *
+   * - 3D dot hover appearance
+   * - coordinate-label hover appearance
+   * - main.ts callback
+   * - matching vertex-table row
+   */
+  emitVertexHover(
+    vertexIndex
+  );
 
 
-    const index =
-      Number(
-        first.object
-          .userData
-          .vertexIndex
-      );
+  /*
+   * Indicate that the visible vertex
+   * can be clicked for persistent
+   * selection.
+   */
+  renderer
+    .domElement
+    .style
+    .cursor =
 
-    if (
-      !Number.isInteger(
-        index
-      )
-    ) {
+    vertexIndex !== null
 
-      emitVertexHover(
-        null
-      );
+      ? "pointer"
 
-      renderer.domElement.style.cursor =
-        "";
-
-      return;
-    }
-
-
-    emitVertexHover(
-      index
-    );
-
-    renderer.domElement.style.cursor =
-      "pointer";
-  }
+      : "";
+}
 
 
   function handlePointerLeave(): void {
@@ -1916,45 +2272,113 @@ function setFaceSelectMode(
   ): void {
 
     /*
-     * Clicking the 3D object
-     * selects a face only when
-     * Face Select mode is ON.
-     */
+    * ---------------------------------------------
+    * FACE MODE
+    * ---------------------------------------------
+    *
+    * Face Select mode has priority over
+    * vertex selection.
+    */
     if (
-      !faceSelectMode
+      faceSelectMode
     ) {
-      return;
-    }
 
-    const faceIndex =
-      raycastFace(
-        event
-      );
+      const faceIndex =
+        raycastFace(
+          event
+        );
 
-    if (
-      faceIndex === null
-    ) {
+
+      if (
+        faceIndex === null
+      ) {
+
+        emitFaceSelection(
+          null
+        );
+
+
+        return;
+      }
+
+
+      const nextFaceSelection =
+
+        selectedFaceIndex ===
+        faceIndex
+
+          ? null
+
+          : faceIndex;
+
 
       emitFaceSelection(
-        null
+        nextFaceSelection
       );
+
 
       return;
     }
 
 
     /*
-     * Clicking selected face
-     * again deselects it.
-     */
-    const nextSelection =
-      selectedFaceIndex ===
-      faceIndex
-        ? null
-        : faceIndex;
+    * ---------------------------------------------
+    * VERTEX MODE
+    * ---------------------------------------------
+    *
+    * Persistent vertex selection is allowed
+    * only when Show Vertices is ON.
+    */
+    if (
+      !verticesVisible
+    ) {
 
-    emitFaceSelection(
-      nextSelection
+      return;
+    }
+
+
+    const vertexIndex =
+      raycastVertex(
+        event
+      );
+
+
+    /*
+    * Clicking anywhere in the viewer that
+    * is NOT a vertex clears the current
+    * persistent vertex selection.
+    *
+    * This is the requested V1.0.2 behavior.
+    */
+    if (
+      vertexIndex === null
+    ) {
+
+      emitVertexSelection(
+        null
+      );
+
+
+      return;
+    }
+
+
+    /*
+    * Clicking the currently selected
+    * vertex again also deselects it.
+    */
+    const nextVertexSelection =
+
+      selectedVertexIndex ===
+      vertexIndex
+
+        ? null
+
+        : vertexIndex;
+
+
+    emitVertexSelection(
+      nextVertexSelection
     );
   }
 
@@ -2060,6 +2484,8 @@ function setFaceSelectMode(
 
     setHoveredVertex,
 
+    setSelectedVertex,
+
     setVertexHoverHandler,
 
     setFaceSelectMode,
@@ -2071,6 +2497,8 @@ function setFaceSelectMode(
     setSelectedFace,
 
     setFaceHoverHandler,
+
+    setVertexSelectionHandler,
 
     setFaceSelectionHandler,
 

@@ -403,6 +403,10 @@ let hoveredVertexRow:
   number | null =
   null;
 
+let selectedVertexRow:
+  number | null =
+  null;
+
 let hoveredFaceRow:
   number | null =
   null;
@@ -831,6 +835,74 @@ function setVertexRowHover(
   }
 }
 
+  function setVertexRowSelected(
+    index: number | null,
+    scrollToRow = false
+  ): void {
+
+    /*
+    * Remove previous persistent
+    * vertex-table selection.
+    */
+    if (
+      selectedVertexRow !== null
+    ) {
+
+      getVertexRow(
+        selectedVertexRow
+      )?.classList.remove(
+        "is-selected"
+      );
+    }
+
+
+    selectedVertexRow =
+      index;
+
+
+    if (
+      index === null
+    ) {
+
+      return;
+    }
+
+
+    const row =
+      getVertexRow(
+        index
+      );
+
+
+    if (!row) {
+
+      return;
+    }
+
+
+    row.classList.add(
+      "is-selected"
+    );
+
+
+    /*
+    * V1.0.2 Day 2 still uses the
+    * basic V1.0.1 scrolling.
+    *
+    * Day 4 will replace this with
+    * table-container-only scrolling.
+    */
+    if (
+      scrollToRow
+    ) {
+
+      row.scrollIntoView({
+        block: "nearest",
+        inline: "nearest"
+      });
+    }
+  }
+
 
 function clearFaceRelatedVertexRows(): void {
 
@@ -1208,6 +1280,9 @@ function renderVertexTable(
   hoveredVertexRow =
     null;
 
+  selectedVertexRow =
+    null;
+
   vertexCountBadge.textContent =
     String(
       vertices.length
@@ -1297,6 +1372,49 @@ function renderVertexTable(
 
           viewer.setHoveredVertex(
             null
+          );
+        }
+      );
+
+      row.addEventListener(
+        "click",
+        () => {
+
+          /*
+          * V1.0.2:
+          *
+          * Vertex table clicking creates
+          * persistent selection only while
+          * Show Vertices mode is ON.
+          *
+          * When vertices are OFF, this table
+          * is hover-inspection only.
+          */
+          if (
+            !verticesVisible
+          ) {
+
+            return;
+          }
+
+
+          const nextSelection =
+
+            selectedVertexRow ===
+            index
+
+              ? null
+
+              : index;
+
+
+          setVertexRowSelected(
+            nextSelection
+          );
+
+
+          viewer.setSelectedVertex(
+            nextSelection
           );
         }
       );
@@ -1500,6 +1618,9 @@ function clearInspector(
   selectedFaceRow =
     null;
 
+  selectedVertexRow =
+  null;
+
   vertexCountBadge.textContent =
     "0";
 
@@ -1557,10 +1678,17 @@ function resetInteractionModes(): void {
     "active"
   );
 
+  vertexTableBody.classList.remove(
+  "selection-enabled"
+  );
+  
   viewer.setVerticesVisible(
     false
   );
 
+  setVertexRowSelected(
+    null
+  );
 
   faceSelectMode =
     false;
@@ -1721,6 +1849,21 @@ viewer.setVertexHoverHandler(
   (index) => {
 
     setVertexRowHover(
+      index,
+      index !== null
+    );
+  }
+);
+
+viewer.setVertexSelectionHandler(
+  (index) => {
+
+    /*
+     * 3D vertex selection
+     *     ↓
+     * matching table row selection
+     */
+    setVertexRowSelected(
       index,
       index !== null
     );
