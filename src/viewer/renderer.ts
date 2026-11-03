@@ -186,11 +186,34 @@ const FACE_COLOR_PALETTE = [
 
 ];
 
+const DEFAULT_VERTEX_SIZE =
+  7;
+
+
+const HOVER_VERTEX_SIZE =
+  12;
+
+
+const SELECTED_VERTEX_SIZE =
+  11;
+
+
+const FACE_VERTEX_SIZE =
+  10;
+
+
+const MUTED_VERTEX_SIZE =
+  5;
+
+
+const VERTEX_PICK_RADIUS_PX =
+  10;
+
 
 type VertexNode =
-  THREE.Mesh<
-    THREE.SphereGeometry,
-    THREE.MeshBasicMaterial
+  THREE.Points<
+    THREE.BufferGeometry,
+    THREE.PointsMaterial
   >;
 
 
@@ -262,6 +285,12 @@ function vertexLabelText(
   );
 }
 
+function compactVertexLabelText(
+  index: number
+): string {
+
+  return `V${index}`;
+}
 
 /*
  * =================================================
@@ -469,102 +498,82 @@ function makeGrid(
 
 
 /*
- * =================================================
- * Model size
- * =================================================
- */
 
-function getModelSize(
-  vertices: Vec3[]
-): number {
+******
+
+*/
+
+function createVertexPointTexture():
+  THREE.CanvasTexture {
+
+  const canvas =
+    document.createElement(
+      "canvas"
+    );
+
+
+  canvas.width =
+    64;
+
+
+  canvas.height =
+    64;
+
+
+  const context =
+    canvas.getContext(
+      "2d"
+    );
+
 
   if (
-    vertices.length === 0
+    !context
   ) {
 
-    return 1000;
+    throw new Error(
+      "Could not create vertex point texture."
+    );
   }
 
 
-  let minX =
-    Infinity;
-
-  let minY =
-    Infinity;
-
-  let minZ =
-    Infinity;
-
-
-  let maxX =
-    -Infinity;
-
-  let maxY =
-    -Infinity;
-
-  let maxZ =
-    -Infinity;
-
-
-  for (
-    const vertex of
-    vertices
-  ) {
-
-    minX =
-      Math.min(
-        minX,
-        vertex.x
-      );
-
-
-    minY =
-      Math.min(
-        minY,
-        vertex.y
-      );
-
-
-    minZ =
-      Math.min(
-        minZ,
-        vertex.z
-      );
-
-
-    maxX =
-      Math.max(
-        maxX,
-        vertex.x
-      );
-
-
-    maxY =
-      Math.max(
-        maxY,
-        vertex.y
-      );
-
-
-    maxZ =
-      Math.max(
-        maxZ,
-        vertex.z
-      );
-  }
-
-
-  return Math.max(
-
-    maxX - minX,
-
-    maxY - minY,
-
-    maxZ - minZ,
-
-    1
-
+  context.clearRect(
+    0,
+    0,
+    64,
+    64
   );
+
+
+  context.beginPath();
+
+
+  context.arc(
+    32,
+    32,
+    27,
+    0,
+    Math.PI * 2
+  );
+
+
+  context.fillStyle =
+    "#ffffff";
+
+
+  context.fill();
+
+
+  const texture =
+    new THREE.CanvasTexture(
+      canvas
+    );
+
+
+  texture.needsUpdate =
+    true;
+
+
+  return texture;
 }
 
 
@@ -825,6 +834,8 @@ export function createViewer(
   const pointer =
     new THREE.Vector2();
 
+  const vertexPointTexture =
+  createVertexPointTexture();
 
   /*
    * =================================================
@@ -1097,12 +1108,6 @@ export function createViewer(
       activeFaceVertexSet();
 
 
-    /*
-     * Muting occurs only when:
-     *
-     * Show Vertices = ON
-     * and one vertex is selected.
-     */
     const selectionActive =
 
       verticesVisible
@@ -1139,13 +1144,13 @@ export function createViewer(
 
 
         /*
-         * A vertex is visible when:
-         *
-         * 1. Show Vertices is ON
-         * 2. temporarily hovered
-         * 3. persistently selected
-         * 4. referenced by active face
-         */
+        * Visible when:
+        *
+        * - Show Vertices is ON
+        * - temporarily hovered
+        * - selected
+        * - referenced by active face
+        */
         node.visible =
 
           verticesVisible
@@ -1164,19 +1169,8 @@ export function createViewer(
 
 
         /*
-         * Appearance priority:
-         *
-         * hover
-         * >
-         * selected
-         * >
-         * face-related
-         * >
-         * muted
-         * >
-         * normal
-         */
-
+        * Hover has highest priority.
+        */
         if (
           isHovered
         ) {
@@ -1189,9 +1183,12 @@ export function createViewer(
             );
 
 
-          node.scale.setScalar(
-            2.5
-          );
+          node.material.size =
+            HOVER_VERTEX_SIZE;
+
+
+          node.material.opacity =
+            1;
 
 
         } else if (
@@ -1206,9 +1203,12 @@ export function createViewer(
             );
 
 
-          node.scale.setScalar(
-            2.2
-          );
+          node.material.size =
+            SELECTED_VERTEX_SIZE;
+
+
+          node.material.opacity =
+            1;
 
 
         } else if (
@@ -1223,9 +1223,12 @@ export function createViewer(
             );
 
 
-          node.scale.setScalar(
-            1.8
-          );
+          node.material.size =
+            FACE_VERTEX_SIZE;
+
+
+          node.material.opacity =
+            1;
 
 
         } else if (
@@ -1240,9 +1243,12 @@ export function createViewer(
             );
 
 
-          node.scale.setScalar(
-            0.85
-          );
+          node.material.size =
+            MUTED_VERTEX_SIZE;
+
+
+          node.material.opacity =
+            0.4;
 
 
         } else {
@@ -1255,17 +1261,21 @@ export function createViewer(
             );
 
 
-          node.scale.setScalar(
-            1
-          );
+          node.material.size =
+            DEFAULT_VERTEX_SIZE;
+
+
+          node.material.opacity =
+            1;
         }
+
+
+        node.material.needsUpdate =
+          true;
       }
     );
 
 
-    /*
-     * HTML label classes.
-     */
     vertexLabels.forEach(
       (
         label,
@@ -1308,47 +1318,85 @@ export function createViewer(
           !isFaceVertex;
 
 
-        label.classList.toggle(
-
-          "is-hovered",
+        /*
+        * Day 4:
+        *
+        * Normal label:
+        * V8
+        *
+        * Active label:
+        * V8 (x, y, z)
+        */
+        const showFullAddress =
 
           isHovered
 
-        );
-
-
-        label.classList.toggle(
-
-          "is-selected",
+          ||
 
           isSelected
 
+          ||
+
+          isFaceVertex;
+
+
+        label.textContent =
+
+          showFullAddress
+
+            ? (
+                label
+                  .dataset
+                  .fullText
+                ??
+                compactVertexLabelText(
+                  index
+                )
+              )
+
+            : (
+                label
+                  .dataset
+                  .compactText
+                ??
+                compactVertexLabelText(
+                  index
+                )
+              );
+
+
+        label.classList.toggle(
+          "is-expanded",
+          showFullAddress
         );
 
 
         label.classList.toggle(
+          "is-hovered",
+          isHovered
+        );
 
+
+        label.classList.toggle(
+          "is-selected",
+          isSelected
+        );
+
+
+        label.classList.toggle(
           "is-face-related",
-
           isFaceVertex
-
         );
 
 
         label.classList.toggle(
-
           "is-muted",
-
           isMuted
-
         );
       }
     );
 
 
-    /*
-     * CSS2D object visibility.
-     */
     vertexLabelObjects.forEach(
       (
         labelObject,
@@ -2358,22 +2406,6 @@ export function createViewer(
       true;
 
 
-    const modelSize =
-      getModelSize(
-        vertices
-      );
-
-
-    const radius =
-      Math.max(
-
-        modelSize * 0.006,
-
-        8
-
-      );
-
-
     for (
       let index = 0;
 
@@ -2395,36 +2427,59 @@ export function createViewer(
        * ---------------------------------------------
        */
 
-      const nodeGeometry =
-        new THREE.SphereGeometry(
-
-          radius,
-
-          12,
-
-          8
-
-        );
+        const nodeGeometry =
+          new THREE.BufferGeometry();
 
 
-      const nodeMaterial =
-        new THREE.MeshBasicMaterial({
+        nodeGeometry.setAttribute(
 
-          color:
-            DEFAULT_VERTEX_COLOR
+          "position",
 
-        });
-
-
-      const node:
-        VertexNode =
-        new THREE.Mesh(
-
-          nodeGeometry,
-
-          nodeMaterial
+          new THREE.Float32BufferAttribute(
+            [
+              0,
+              0,
+              0
+            ],
+            3
+          )
 
         );
+
+
+        const nodeMaterial =
+          new THREE.PointsMaterial({
+
+            color:
+              DEFAULT_VERTEX_COLOR,
+
+            size:
+              DEFAULT_VERTEX_SIZE,
+
+            sizeAttenuation:
+              false,
+
+            map:
+              vertexPointTexture,
+
+            transparent:
+              true,
+
+            alphaTest:
+              0.25
+
+          });
+
+
+        const node:
+          VertexNode =
+          new THREE.Points(
+
+            nodeGeometry,
+
+            nodeMaterial
+
+          );
 
 
       node.position.set(
@@ -2474,11 +2529,29 @@ export function createViewer(
         "vertex-label";
 
 
-      labelElement.textContent =
+      const compactText =
+        compactVertexLabelText(
+          index
+        );
+
+
+      const fullText =
         vertexLabelText(
           index,
           vertex
         );
+
+
+      labelElement.textContent =
+        compactText;
+
+
+      labelElement.dataset.compactText =
+        compactText;
+
+
+      labelElement.dataset.fullText =
+        fullText;
 
 
       labelElement
@@ -3041,77 +3114,162 @@ export function createViewer(
    * =================================================
    */
 
-  function raycastVertex(
-    event: PointerEvent
-  ): number | null {
+function raycastVertex(
+  event: PointerEvent
+): number | null {
 
-    updatePointer(
-      event
-    );
-
-
-    raycaster.setFromCamera(
-      pointer,
-      camera
-    );
+  const rect =
+    renderer
+      .domElement
+      .getBoundingClientRect();
 
 
-    /*
-     * Only visible nodes should be
-     * eligible for picking.
-     */
-    const visibleNodes =
-      vertexNodes.filter(
-        (
-          node
-        ) =>
-          node.visible
-      );
+  let nearestIndex:
+    number | null =
+    null;
 
 
-    const intersections =
-      raycaster.intersectObjects(
+  let nearestDistanceSquared =
 
-        visibleNodes,
+    VERTEX_PICK_RADIUS_PX
 
-        false
+    *
 
-      );
-
-
-    const first =
-      intersections[
-        0
-      ];
+    VERTEX_PICK_RADIUS_PX;
 
 
-    if (
-      !first
-    ) {
-
-      return null;
-    }
+  const worldPosition =
+    new THREE.Vector3();
 
 
-    const index =
-      Number(
-
-        first
-          .object
-          .userData
-          .vertexIndex
-
-      );
+  const projected =
+    new THREE.Vector3();
 
 
-    return Number.isInteger(
+  vertexNodes.forEach(
+    (
+      node,
       index
-    )
+    ) => {
 
-      ? index
+      if (
+        !node.visible
+      ) {
 
-      : null;
-  }
+        return;
+      }
+
+
+      /*
+       * World-space vertex position.
+       */
+      node.getWorldPosition(
+        worldPosition
+      );
+
+
+      projected
+        .copy(
+          worldPosition
+        )
+        .project(
+          camera
+        );
+
+
+      /*
+       * Ignore points outside the
+       * camera depth range.
+       */
+      if (
+        projected.z < -1
+
+        ||
+
+        projected.z > 1
+      ) {
+
+        return;
+      }
+
+
+      const screenX =
+
+        rect.left
+
+        +
+
+        (
+          projected.x + 1
+        )
+
+        *
+
+        0.5
+
+        *
+
+        rect.width;
+
+
+      const screenY =
+
+        rect.top
+
+        +
+
+        (
+          1 - projected.y
+        )
+
+        *
+
+        0.5
+
+        *
+
+        rect.height;
+
+
+      const dx =
+        event.clientX
+        -
+        screenX;
+
+
+      const dy =
+        event.clientY
+        -
+        screenY;
+
+
+      const distanceSquared =
+
+        dx * dx
+
+        +
+
+        dy * dy;
+
+
+      if (
+        distanceSquared <=
+        nearestDistanceSquared
+      ) {
+
+        nearestDistanceSquared =
+          distanceSquared;
+
+
+        nearestIndex =
+          index;
+      }
+    }
+  );
+
+
+  return nearestIndex;
+}
 
 
   /*
@@ -3695,6 +3853,8 @@ export function createViewer(
 
 
       clear();
+
+      vertexPointTexture.dispose();
 
 
       controls.dispose();

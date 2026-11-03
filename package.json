@@ -1,7 +1,7 @@
 {
   "name": "strakon-smd-viewer-v1-0-2-dev",
   "private": true,
-  "version": "1.0.2-dev.2",
+  "version": "1.0.2-dev.4",
   "type": "module",
   "scripts": {
     "dev": "vite",

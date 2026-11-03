@@ -798,3 +798,73 @@ input {
     opacity 100ms ease,
     box-shadow 100ms ease;
 }
+
+
+/* =========================================================
+   V1.0.2 Day 4
+   Compact vertex visualization
+   ========================================================= */
+
+
+/*
+ * Normal labels are deliberately tiny.
+ *
+ * Example:
+ * V8
+ */
+.vertex-label {
+  min-width: 0;
+
+  padding:
+    2px 4px;
+
+  border-radius:
+    4px;
+
+  font-size:
+    9px;
+
+  line-height:
+    1.15;
+
+  white-space:
+    nowrap;
+}
+
+
+/*
+ * Hovered, selected and face-related
+ * labels expand to the complete:
+ *
+ * V8 (375, -325, 1847.804)
+ */
+.vertex-label.is-expanded {
+  padding:
+    3px 6px;
+
+  font-size:
+    10px;
+}
+
+
+/*
+ * Compact normal labels should be
+ * visually secondary to the model.
+ */
+.vertex-label:not(.is-expanded) {
+  opacity:
+    0.78;
+}
+
+
+/*
+ * Active labels always return to
+ * full visibility.
+ */
+.vertex-label.is-expanded,
+.vertex-label.is-hovered,
+.vertex-label.is-selected,
+.vertex-label.is-face-related {
+  opacity:
+    1;
+}

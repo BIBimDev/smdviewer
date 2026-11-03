@@ -359,9 +359,19 @@ const vertexTableBody =
     "#vertexTableBody"
   );
 
+const vertexTableWrap =
+  mustQuery<HTMLElement>(
+    "#vertexTableWrap"
+  );
+
 const faceTableBody =
   mustQuery<HTMLTableSectionElement>(
     "#faceTableBody"
+  );
+
+const faceTableWrap =
+  mustQuery<HTMLElement>(
+    "#faceTableWrap"
   );
 
 const vertexCountBadge =
@@ -789,6 +799,83 @@ function getFaceRow(
     );
 }
 
+function scrollRowIntoContainer(
+  row: HTMLTableRowElement,
+  container: HTMLElement
+  ): void {
+
+    const containerRect =
+      container.getBoundingClientRect();
+
+
+    const rowRect =
+      row.getBoundingClientRect();
+
+
+    /*
+    * Account for the sticky table
+    * header so a row is not scrolled
+    * underneath it.
+    */
+    const tableHeader =
+      container.querySelector<HTMLElement>(
+        "thead"
+      );
+
+
+    const headerHeight =
+      tableHeader
+        ?.getBoundingClientRect()
+        .height
+      ??
+      0;
+
+
+    const visibleTop =
+      containerRect.top
+      +
+      headerHeight;
+
+
+    const visibleBottom =
+      containerRect.bottom;
+
+
+    /*
+    * Row is above the visible area.
+    */
+    if (
+      rowRect.top <
+      visibleTop
+    ) {
+
+      container.scrollTop -=
+
+        visibleTop
+        -
+        rowRect.top;
+
+
+      return;
+    }
+
+
+    /*
+    * Row is below the visible area.
+    */
+    if (
+      rowRect.bottom >
+      visibleBottom
+    ) {
+
+      container.scrollTop +=
+
+        rowRect.bottom
+        -
+        visibleBottom;
+    }
+  }
+
 
 function setVertexRowHover(
   index: number | null,
@@ -828,10 +915,11 @@ function setVertexRowHover(
   if (
     scrollToRow
   ) {
-    row.scrollIntoView({
-      block: "nearest",
-      inline: "nearest"
-    });
+
+    scrollRowIntoContainer(
+      row,
+      vertexTableWrap
+    );
   }
 }
 
@@ -896,10 +984,10 @@ function setVertexRowHover(
       scrollToRow
     ) {
 
-      row.scrollIntoView({
-        block: "nearest",
-        inline: "nearest"
-      });
+    scrollRowIntoContainer(
+        row,
+        vertexTableWrap
+      );
     }
   }
 
@@ -1004,10 +1092,10 @@ function setFaceRowHover(
       &&
       scrollToRow
     ) {
-      row.scrollIntoView({
-        block: "nearest",
-        inline: "nearest"
-      });
+        scrollRowIntoContainer(
+          row,
+          faceTableWrap
+        );
     }
   }
 
@@ -1260,10 +1348,11 @@ function setFaceRowSelected(
       &&
       scrollToRow
     ) {
-      row.scrollIntoView({
-        block: "nearest",
-        inline: "nearest"
-      });
+
+      scrollRowIntoContainer(
+        row,
+        faceTableWrap
+      );
     }
   }
 
