@@ -20,6 +20,6 @@ if not exist node_modules (
   )
 )
 
-echo Starting STRAKON SMD Viewer V1...
+echo Starting STRAKON SMD Viewer V1.0.3...
 call npm.cmd run dev
 pause

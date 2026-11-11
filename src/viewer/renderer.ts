@@ -3,6 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { ParsedSmd, Vec3 } from "../smd/types";
 import { triangulateFace } from "./triangulation";
+import { createViewCube } from "./viewCube";
 
 export interface ViewerInteractionHandlers {
   onVertexHover?: (vertexIndex: number | null) => void;
@@ -19,6 +20,8 @@ export interface ViewerHandle {
   setVerticesVisible(visible: boolean): void;
   setFaceSelectMode(enabled: boolean): void;
   setFaceColors(enabled: boolean): void;
+  setTransparent(enabled: boolean): void;
+  setViewCubeVisible(visible: boolean): void;
   setHoveredVertex(vertexIndex: number | null): void;
   setHoveredFace(faceIndex: number | null): void;
   selectVertex(vertexIndex: number | null): void;
@@ -154,6 +157,7 @@ export function createViewer(container: HTMLElement): ViewerHandle {
   scene.add(axes);
 
   const raycaster = new THREE.Raycaster();
+  const occlusionRaycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
 
   let modelRoot: THREE.Group | undefined;
@@ -171,6 +175,11 @@ export function createViewer(container: HTMLElement): ViewerHandle {
   let verticesVisible = false;
   let faceSelectMode = false;
   let faceColorsEnabled = false;
+  let transparentMode = false;
+  let viewCubeVisible = true;
+  let modelDiagonal = 1;
+  let occlusionDirty = true;
+  let occludedVertices = new Set<number>();
 
   let hoveredVertex: number | null = null;
   let selectedVertex: number | null = null;
@@ -180,6 +189,57 @@ export function createViewer(container: HTMLElement): ViewerHandle {
   let hoveredFaceVertices = new Set<number>();
   let selectedFaceVertices = new Set<number>();
   let handlers: ViewerInteractionHandlers = {};
+
+  function markOcclusionDirty(): void {
+    occlusionDirty = true;
+  }
+
+  function snapCameraToDirection(direction: THREE.Vector3): void {
+    const distance = Math.max(camera.position.distanceTo(controls.target), modelDiagonal * 1.2, 100);
+    const dir = direction.clone().normalize();
+
+    if (Math.abs(dir.z) > 0.99) {
+      camera.up.set(0, dir.z > 0 ? 1 : -1, 0);
+    } else {
+      camera.up.set(0, 0, 1);
+    }
+
+    camera.position.copy(controls.target).addScaledVector(dir, distance);
+    camera.lookAt(controls.target);
+    controls.update();
+    markOcclusionDirty();
+  }
+
+  function orbitCameraFromCube(deltaX: number, deltaY: number): void {
+    const offset = camera.position.clone().sub(controls.target);
+    const radius = Math.max(offset.length(), 1);
+    let azimuth = Math.atan2(offset.y, offset.x);
+    let polar = Math.acos(THREE.MathUtils.clamp(offset.z / radius, -1, 1));
+
+    azimuth -= deltaX * 0.012;
+    polar = THREE.MathUtils.clamp(polar - deltaY * 0.012, 0.05, Math.PI - 0.05);
+
+    const sinPolar = Math.sin(polar);
+    offset.set(
+      radius * sinPolar * Math.cos(azimuth),
+      radius * sinPolar * Math.sin(azimuth),
+      radius * Math.cos(polar),
+    );
+
+    camera.up.set(0, 0, 1);
+    camera.position.copy(controls.target).add(offset);
+    camera.lookAt(controls.target);
+    controls.update();
+    markOcclusionDirty();
+  }
+
+  const viewCube = createViewCube(container, {
+    onSnap: snapCameraToDirection,
+    onOrbit: orbitCameraFromCube,
+  });
+  viewCube.setVisible(viewCubeVisible);
+
+  controls.addEventListener("change", markOcclusionDirty);
 
   function faceColor(faceIndex: number): number {
     return FACE_PALETTE[faceIndex % FACE_PALETTE.length];
@@ -229,6 +289,11 @@ export function createViewer(container: HTMLElement): ViewerHandle {
     }
 
     mesh.material.color.setHex(color);
+    mesh.material.transparent = transparentMode;
+    mesh.material.opacity = transparentMode ? 0.32 : 1;
+    mesh.material.depthWrite = !transparentMode;
+    mesh.material.needsUpdate = true;
+    mesh.renderOrder = transparentMode ? 2 : 0;
   }
 
   function updateAllFaceAppearances(): void {
@@ -246,8 +311,12 @@ export function createViewer(container: HTMLElement): ViewerHandle {
     const isSelected = selectedVertex === vertexIndex;
     const isHoveredFaceVertex = hoveredFaceVertices.has(vertexIndex);
     const isSelectedFaceVertex = selectedFaceVertices.has(vertexIndex);
-    const isEmphasized = isHovered || isSelected || isHoveredFaceVertex || isSelectedFaceVertex;
-    const shouldShow = verticesVisible || isEmphasized;
+    const isDirectVertexEmphasis = isHovered || isSelected;
+    const isFaceEmphasis = isHoveredFaceVertex || isSelectedFaceVertex;
+    const isEmphasized = isDirectVertexEmphasis || isFaceEmphasis;
+    const baseShouldShow = verticesVisible || isEmphasized;
+    const hiddenBySolid = !transparentMode && occludedVertices.has(vertexIndex);
+    const shouldShow = baseShouldShow && !hiddenBySolid;
     const hasVertexSelection = verticesVisible && selectedVertex !== null;
     const isMuted = hasVertexSelection && !isHovered && !isSelected && !isHoveredFaceVertex && !isSelectedFaceVertex;
 
@@ -283,18 +352,71 @@ export function createViewer(container: HTMLElement): ViewerHandle {
     node.material.opacity = isMuted ? 0.45 : 1;
     node.material.needsUpdate = true;
 
-    // Dense models become unreadable if every label shows XYZ all the time.
-    // Default visible labels are compact V# tags. Hover/selection/face contribution
-    // expands only the relevant labels to the full V#(x,y,z) address.
-    label.element.textContent = isEmphasized ? fullVertexLabel(vertexIndex) : `V${vertexIndex}`;
+    // V1.0.3 keeps face-related labels compact. Full XYZ is shown only for a
+    // directly hovered/selected vertex; selected-face coordinates live in the
+    // inspector panel instead of covering the model.
+    label.element.textContent = isDirectVertexEmphasis ? fullVertexLabel(vertexIndex) : `V${vertexIndex}`;
     label.element.title = fullVertexLabel(vertexIndex);
 
-    label.element.classList.toggle("is-compact", !isEmphasized);
+    label.element.classList.toggle("is-compact", !isDirectVertexEmphasis);
     label.element.classList.toggle("is-muted", isMuted);
     label.element.classList.toggle("is-hovered", isHovered);
     label.element.classList.toggle("is-selected-vertex", isSelected);
     label.element.classList.toggle("is-face-hover-vertex", isHoveredFaceVertex && !isSelectedFaceVertex);
     label.element.classList.toggle("is-face-vertex", isSelectedFaceVertex);
+  }
+
+  function recomputeVertexOcclusion(): void {
+    occlusionDirty = false;
+
+    if (!currentParsed || transparentMode || faceMeshes.length === 0) {
+      if (occludedVertices.size > 0) {
+        occludedVertices = new Set<number>();
+        updateAllVertexAppearances();
+      }
+      return;
+    }
+
+    const nextOccluded = new Set<number>();
+    const cameraPosition = new THREE.Vector3();
+    camera.getWorldPosition(cameraPosition);
+    const target = new THREE.Vector3();
+    const direction = new THREE.Vector3();
+    const epsilon = Math.max(modelDiagonal * 0.00002, 0.25);
+    const vertices = currentParsed.geometry.brep.verticesWorld;
+
+    vertices.forEach((vertex, vertexIndex) => {
+      target.set(vertex.x, vertex.y, vertex.z);
+      direction.copy(target).sub(cameraPosition);
+      const distance = direction.length();
+      if (distance <= epsilon) {
+        return;
+      }
+
+      direction.normalize();
+      occlusionRaycaster.set(cameraPosition, direction);
+      occlusionRaycaster.near = 0;
+      occlusionRaycaster.far = Math.max(distance - epsilon, 0);
+      const hit = occlusionRaycaster.intersectObjects(faceMeshes, false)[0];
+      if (hit) {
+        nextOccluded.add(vertexIndex);
+      }
+    });
+
+    let changed = nextOccluded.size !== occludedVertices.size;
+    if (!changed) {
+      for (const index of nextOccluded) {
+        if (!occludedVertices.has(index)) {
+          changed = true;
+          break;
+        }
+      }
+    }
+
+    occludedVertices = nextOccluded;
+    if (changed) {
+      updateAllVertexAppearances();
+    }
   }
 
   function updateVertexSet(indices: Iterable<number>): void {
@@ -424,6 +546,8 @@ export function createViewer(container: HTMLElement): ViewerHandle {
     selectedFace = null;
     selectedFaceVertices = new Set<number>();
     hoveredFaceVertices = new Set<number>();
+    occludedVertices = new Set<number>();
+    occlusionDirty = true;
 
     if (modelRoot) {
       scene.remove(modelRoot);
@@ -498,6 +622,7 @@ export function createViewer(container: HTMLElement): ViewerHandle {
     const fovRadians = THREE.MathUtils.degToRad(camera.fov);
     const distance = (maxDimension / (2 * Math.tan(fovRadians / 2))) * 1.8;
 
+    camera.up.set(0, 0, 1);
     camera.position.set(
       center.x + distance * 0.8,
       center.y - distance * 0.9,
@@ -510,6 +635,7 @@ export function createViewer(container: HTMLElement): ViewerHandle {
 
     controls.target.copy(center);
     controls.update();
+    markOcclusionDirty();
   }
 
   function load(parsed: ParsedSmd): void {
@@ -526,6 +652,9 @@ export function createViewer(container: HTMLElement): ViewerHandle {
         roughness: 0.82,
         metalness: 0,
         side: THREE.DoubleSide,
+        transparent: transparentMode,
+        opacity: transparentMode ? 0.32 : 1,
+        depthWrite: !transparentMode,
       });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.userData.faceIndex = faceIndex;
@@ -553,6 +682,8 @@ export function createViewer(container: HTMLElement): ViewerHandle {
     const size = new THREE.Vector3();
     box.getSize(size);
     const maxDimension = Math.max(size.x, size.y, size.z, 1);
+    modelDiagonal = Math.max(size.length(), maxDimension);
+    occlusionDirty = true;
 
     // Raycaster point thresholds are world-space even though the visible point
     // marker is screen-sized. Scale the hit tolerance from the model extent.
@@ -594,15 +725,21 @@ export function createViewer(container: HTMLElement): ViewerHandle {
 
       // Labels themselves participate in the same hover/selection behaviour as dots.
       labelElement.addEventListener("mouseenter", () => {
+        if (faceSelectMode) {
+          return;
+        }
         setHoveredVertexInternal(vertexIndex, true);
       });
       labelElement.addEventListener("mouseleave", () => {
+        if (faceSelectMode) {
+          return;
+        }
         setHoveredVertexInternal(null, true);
       });
       labelElement.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (!verticesVisible) {
+        if (!verticesVisible || faceSelectMode) {
           return;
         }
         const next = selectedVertex === vertexIndex ? null : vertexIndex;
@@ -749,8 +886,12 @@ export function createViewer(container: HTMLElement): ViewerHandle {
   const animate = (): void => {
     animationFrame = requestAnimationFrame(animate);
     controls.update();
+    if (occlusionDirty) {
+      recomputeVertexOcclusion();
+    }
     renderer.render(scene, camera);
     labelRenderer.render(scene, camera);
+    viewCube.syncFromCamera(camera);
   };
   animate();
 
@@ -764,6 +905,7 @@ export function createViewer(container: HTMLElement): ViewerHandle {
         selectVertexInternal(null, true);
       }
       updateAllVertexAppearances();
+      markOcclusionDirty();
     },
     setFaceSelectMode(enabled: boolean): void {
       faceSelectMode = enabled;
@@ -772,11 +914,23 @@ export function createViewer(container: HTMLElement): ViewerHandle {
         setHoveredFaceInternal(null, true);
         selectFaceInternal(null, true);
       }
+      container.classList.toggle("face-select-mode", enabled);
       renderer.domElement.style.cursor = enabled ? "crosshair" : "grab";
     },
     setFaceColors(enabled: boolean): void {
       faceColorsEnabled = enabled;
       updateAllFaceAppearances();
+    },
+    setTransparent(enabled: boolean): void {
+      transparentMode = enabled;
+      updateAllFaceAppearances();
+      occludedVertices = new Set<number>();
+      markOcclusionDirty();
+      updateAllVertexAppearances();
+    },
+    setViewCubeVisible(visible: boolean): void {
+      viewCubeVisible = visible;
+      viewCube.setVisible(visible);
     },
     setHoveredVertex(vertexIndex: number | null): void {
       setHoveredVertexInternal(vertexIndex, false);
@@ -801,6 +955,8 @@ export function createViewer(container: HTMLElement): ViewerHandle {
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
       clear();
+      controls.removeEventListener("change", markOcclusionDirty);
+      viewCube.dispose();
       controls.dispose();
       renderer.dispose();
       renderer.domElement.remove();

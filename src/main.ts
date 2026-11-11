@@ -11,19 +11,43 @@ if (!app) {
 app.innerHTML = `
   <div class="app-shell">
     <header class="toolbar">
-      <div>
-        <div class="brand">STRAKON SMD Viewer <span>V1.0.2</span></div>
+      <div class="toolbar-brand">
+        <div class="brand">STRAKON SMD Viewer <span>V1.0.3</span></div>
         <div class="subtitle">DICAD ASC + #10125 explicit BREP viewer and geometry inspector</div>
       </div>
-      <div class="toolbar-actions">
-        <label class="button primary">
-          Open .smd
-          <input id="fileInput" type="file" accept=".smd,text/plain" hidden />
-        </label>
-        <button id="verticesButton" class="button" type="button">Show vertices</button>
-        <button id="faceSelectButton" class="button" type="button">Select faces</button>
-        <button id="faceColorsButton" class="button" type="button">Face colors</button>
-        <button id="fitButton" class="button" type="button">Fit model</button>
+
+      <div class="toolbar-groups">
+        <section class="tool-group commands-group" aria-label="Commands">
+          <div class="tool-group-title">Commands</div>
+          <div class="tool-group-actions">
+            <label class="button primary">
+              Open .smd
+              <input id="fileInput" type="file" accept=".smd,text/plain" hidden />
+            </label>
+            <button id="fitButton" class="button" type="button">Fit model</button>
+          </div>
+        </section>
+
+        <section class="tool-group view-options-group" aria-label="View options">
+          <div class="tool-group-title">View options</div>
+          <div class="tool-group-actions">
+            <button id="verticesButton" class="button" type="button" aria-pressed="false">Show vertices</button>
+            <button id="faceSelectButton" class="button" type="button" aria-pressed="false">Select faces</button>
+            <button id="faceColorsButton" class="button" type="button" aria-pressed="false">Face colors</button>
+            <button id="transparencyButton" class="button" type="button" aria-pressed="false">Transparent</button>
+            <button id="viewCubeButton" class="button active" type="button" aria-pressed="true">View cube</button>
+          </div>
+        </section>
+
+        <section class="tool-group status-group" aria-label="Status">
+          <div class="tool-group-title">Status</div>
+          <div id="statusText" class="status-message">Ready.</div>
+          <div class="status-chips" aria-label="Viewer status">
+            <span id="renderModeStatus" class="status-chip">Solid</span>
+            <span id="vertexModeStatus" class="status-chip">Vertices off</span>
+            <span id="faceModeStatus" class="status-chip">Face select off</span>
+          </div>
+        </section>
       </div>
     </header>
 
@@ -44,9 +68,7 @@ app.innerHTML = `
         <section class="panel inspector-panel">
           <h2>Geometry Inspector</h2>
           <p class="inspector-help">
-            Hover table rows or 3D vertex tags to inspect geometry. Vertex selection is available only while
-            <strong>Show vertices</strong> is ON. Persistent face selection is available only while
-            <strong>Select faces</strong> is ON.
+            Solid mode hides occluded back-side vertices. Transparent mode exposes them. Face-related vertices stay compact on the model; exact coordinates remain in this inspector.
           </p>
 
           <details id="vertexInspector" class="inspector-section" open>
@@ -81,9 +103,9 @@ app.innerHTML = `
         </section>
 
         <section class="panel notes">
-          <h2>V1.0.2 scope</h2>
-          <p>Supported: DICAD ASC files containing a #10125 object with explicit vertices, single-loop faces, planes and face names.</p>
-          <p>V1.0.2 refines hover/selection behaviour, table synchronization, scrolling, and dense vertex visualization. The original V1 parser remains unchanged.</p>
+          <h2>V1.0.3 scope</h2>
+          <p>V1.0.3 adds an interactive view cube, grouped commands/view/status controls, solid-vs-transparent vertex visibility, and a cleaner selected-face presentation.</p>
+          <p>The V1 SMD parser and single-loop face model remain unchanged.</p>
         </section>
       </aside>
 
@@ -91,10 +113,6 @@ app.innerHTML = `
         <div id="dropOverlay" class="drop-overlay">Drop .smd here</div>
       </section>
     </main>
-
-    <footer class="statusbar">
-      <span id="statusText">Ready.</span>
-    </footer>
   </div>
 `;
 
@@ -115,7 +133,12 @@ const dropOverlay = mustQuery<HTMLElement>("#dropOverlay");
 const verticesButton = mustQuery<HTMLButtonElement>("#verticesButton");
 const faceSelectButton = mustQuery<HTMLButtonElement>("#faceSelectButton");
 const faceColorsButton = mustQuery<HTMLButtonElement>("#faceColorsButton");
+const transparencyButton = mustQuery<HTMLButtonElement>("#transparencyButton");
+const viewCubeButton = mustQuery<HTMLButtonElement>("#viewCubeButton");
 const fitButton = mustQuery<HTMLButtonElement>("#fitButton");
+const renderModeStatus = mustQuery<HTMLElement>("#renderModeStatus");
+const vertexModeStatus = mustQuery<HTMLElement>("#vertexModeStatus");
+const faceModeStatus = mustQuery<HTMLElement>("#faceModeStatus");
 const vertexInspector = mustQuery<HTMLDetailsElement>("#vertexInspector");
 const faceInspector = mustQuery<HTMLDetailsElement>("#faceInspector");
 const vertexCountBadge = mustQuery<HTMLElement>("#vertexCountBadge");
@@ -130,6 +153,8 @@ let currentParsed: ParsedSmd | null = null;
 let verticesVisible = false;
 let faceSelectMode = false;
 let faceColorsEnabled = false;
+let transparentMode = false;
+let viewCubeVisible = true;
 let uiHoveredVertex: number | null = null;
 let uiHoveredFace: number | null = null;
 let uiSelectedVertex: number | null = null;
@@ -302,6 +327,12 @@ function renderFaceDetails(faceIndex: number | null): void {
   const vertices = currentParsed.geometry.brep.verticesWorld;
   const indices = faceVertexIndices(face);
 
+  const chips = indices.map((index) => `
+    <span class="face-vertex-chip" data-face-vertex-index="${index}" title="${esc(`V${index} (${formatCoordinate(vertices[index].x)}, ${formatCoordinate(vertices[index].y)}, ${formatCoordinate(vertices[index].z)})`)}">
+      V${index}
+    </span>
+  `).join("");
+
   const coordinateRows = indices.map((index) => {
     const vertex = vertices[index];
     return `
@@ -315,13 +346,17 @@ function renderFaceDetails(faceIndex: number | null): void {
   }).join("");
 
   selectedFaceDetails.innerHTML = `
-    <div class="selected-face-header">Selected face F${faceIndex}</div>
+    <div class="selected-face-header">
+      <span>Selected face F${faceIndex}</span>
+      <span class="selected-face-name">${esc(face.name ?? "-")}</span>
+    </div>
     <dl class="selected-face-meta">
-      <dt>Name</dt><dd>${esc(face.name ?? "-")}</dd>
       <dt>Plane</dt><dd class="mono">${esc(planeSummary(face.plane))}</dd>
-      <dt>Vertices</dt><dd>${indices.map((index) => `V${index}`).join(", ")}</dd>
+      <dt>Vertices</dt><dd>${indices.length}</dd>
     </dl>
-    <div class="selected-face-coordinates-title">Face vertex coordinates</div>
+    <div class="selected-face-coordinates-title">Face vertices</div>
+    <div class="face-vertex-chips">${chips}</div>
+    <div class="selected-face-coordinates-title">Coordinates</div>
     <div class="table-scroll compact-table-scroll">
       <table class="inspector-table compact-table">
         <thead><tr><th>Vertex</th><th>X</th><th>Y</th><th>Z</th></tr></thead>
@@ -330,6 +365,18 @@ function renderFaceDetails(faceIndex: number | null): void {
     </div>
   `;
   selectedFaceDetails.classList.remove("hidden");
+
+  for (const chip of selectedFaceDetails.querySelectorAll<HTMLElement>("[data-face-vertex-index]")) {
+    const index = Number(chip.dataset.faceVertexIndex);
+    chip.addEventListener("mouseenter", () => {
+      viewer.setHoveredVertex(index);
+      setVertexRowHover(index, true);
+    });
+    chip.addEventListener("mouseleave", () => {
+      viewer.setHoveredVertex(null);
+      setVertexRowHover(null);
+    });
+  }
 }
 
 function applySelectedVertexUi(vertexIndex: number | null): void {
@@ -382,6 +429,15 @@ function applySelectedFaceUi(faceIndex: number | null): void {
 function updateSelectionModeClasses(): void {
   vertexInspector.classList.toggle("selection-enabled", verticesVisible);
   faceInspector.classList.toggle("selection-enabled", faceSelectMode);
+}
+
+function updateModeStatus(): void {
+  renderModeStatus.textContent = transparentMode ? "Transparent" : "Solid";
+  renderModeStatus.classList.toggle("active", transparentMode);
+  vertexModeStatus.textContent = verticesVisible ? "Vertices on" : "Vertices off";
+  vertexModeStatus.classList.toggle("active", verticesVisible);
+  faceModeStatus.textContent = faceSelectMode ? "Face select on" : "Face select off";
+  faceModeStatus.classList.toggle("active", faceSelectMode);
 }
 
 function populateInspector(parsed: ParsedSmd): void {
@@ -441,8 +497,8 @@ function populateInspector(parsed: ParsedSmd): void {
   for (const row of faceTableBody.querySelectorAll<HTMLTableRowElement>("tr[data-face-index]")) {
     const index = Number(row.dataset.faceIndex);
 
-    // Face hover remains useful in every mode. The renderer highlights the face
-    // and temporarily exposes its contributing vertices with full XYZ addresses.
+    // Face hover remains useful in every mode. V1.0.3 keeps contributing
+    // vertex labels compact while exact coordinates remain in the inspector.
     row.addEventListener("mouseenter", () => {
       viewer.setHoveredFace(index);
       setFaceRowHover(index);
@@ -510,6 +566,9 @@ function loadText(text: string, sourceName: string): void {
     viewer.setVerticesVisible(verticesVisible);
     viewer.setFaceSelectMode(faceSelectMode);
     viewer.setFaceColors(faceColorsEnabled);
+    viewer.setTransparent(transparentMode);
+    viewer.setViewCubeVisible(viewCubeVisible);
+    updateModeStatus();
     updateInfo(parsed, sourceName);
     populateInspector(parsed);
     statusText.textContent = `Loaded ${sourceName}: ${parsed.geometry.brep.verticesWorld.length} vertices, ${parsed.geometry.brep.faces.length} faces.`;
@@ -545,8 +604,10 @@ verticesButton.addEventListener("click", () => {
   verticesVisible = !verticesVisible;
   viewer.setVerticesVisible(verticesVisible);
   verticesButton.classList.toggle("active", verticesVisible);
+  verticesButton.setAttribute("aria-pressed", String(verticesVisible));
   verticesButton.textContent = verticesVisible ? "Vertices: ON" : "Show vertices";
   updateSelectionModeClasses();
+  updateModeStatus();
 
   if (!verticesVisible) {
     applySelectedVertexUi(null);
@@ -557,13 +618,14 @@ faceSelectButton.addEventListener("click", () => {
   faceSelectMode = !faceSelectMode;
   viewer.setFaceSelectMode(faceSelectMode);
   faceSelectButton.classList.toggle("active", faceSelectMode);
+  faceSelectButton.setAttribute("aria-pressed", String(faceSelectMode));
   faceSelectButton.textContent = faceSelectMode ? "Face select: ON" : "Select faces";
   updateSelectionModeClasses();
+  updateModeStatus();
 
   if (faceSelectMode) {
     faceInspector.open = true;
   } else {
-    // Leaving the mode is a hard reset for every persistent face-selection effect.
     applySelectedFaceUi(null);
   }
 });
@@ -572,7 +634,23 @@ faceColorsButton.addEventListener("click", () => {
   faceColorsEnabled = !faceColorsEnabled;
   viewer.setFaceColors(faceColorsEnabled);
   faceColorsButton.classList.toggle("active", faceColorsEnabled);
-  faceColorsButton.textContent = faceColorsEnabled ? "Face colors: ON" : "Face colors";
+  faceColorsButton.setAttribute("aria-pressed", String(faceColorsEnabled));
+});
+
+transparencyButton.addEventListener("click", () => {
+  transparentMode = !transparentMode;
+  viewer.setTransparent(transparentMode);
+  transparencyButton.classList.toggle("active", transparentMode);
+  transparencyButton.setAttribute("aria-pressed", String(transparentMode));
+  transparencyButton.textContent = transparentMode ? "Transparent: ON" : "Transparent";
+  updateModeStatus();
+});
+
+viewCubeButton.addEventListener("click", () => {
+  viewCubeVisible = !viewCubeVisible;
+  viewer.setViewCubeVisible(viewCubeVisible);
+  viewCubeButton.classList.toggle("active", viewCubeVisible);
+  viewCubeButton.setAttribute("aria-pressed", String(viewCubeVisible));
 });
 
 fitButton.addEventListener("click", () => viewer.fit());
@@ -597,3 +675,6 @@ viewerElement.addEventListener("drop", (event) => {
     void loadFile(file);
   }
 });
+
+
+updateModeStatus();

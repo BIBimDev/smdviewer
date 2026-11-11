@@ -29,7 +29,7 @@ input {
 
 .app-shell {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   width: 100%;
   height: 100%;
 }
@@ -496,4 +496,229 @@ input {
     border-right: 0;
     border-bottom: 1px solid #d7dde3;
   }
+}
+
+
+/* =========================================================
+   V1.0.3 grouped toolbar / status
+   ========================================================= */
+
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.7fr) minmax(620px, 2fr);
+  align-items: end;
+  gap: 18px;
+  padding: 10px 14px;
+}
+
+.toolbar-brand {
+  min-width: 0;
+  align-self: center;
+}
+
+.toolbar-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tool-group {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 8px 7px;
+  border: 1px solid #d8dee5;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.tool-group-title {
+  color: #718096;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.tool-group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-group {
+  min-width: 220px;
+  max-width: 330px;
+}
+
+.status-message {
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid #d8dee5;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.status-chip.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+/* =========================================================
+   V1.0.3 interactive view cube
+   ========================================================= */
+
+/* =========================================================
+   V1.0.3 Rubik-style navigation cube
+   ========================================================= */
+
+.view-cube {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 6;
+  width: 164px;
+  height: 164px;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.view-cube.hidden {
+  display: none;
+}
+
+/*
+ * The cube is the complete control: no card, no face label, no overlay dots.
+ * Every visible Rubik tile is a real 3D pick target.
+ */
+.view-cube-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 164px !important;
+  height: 164px !important;
+  outline: none;
+  touch-action: none;
+  filter: drop-shadow(0 3px 4px rgb(15 23 42 / 0.24));
+}
+
+.view-cube-canvas:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -5px;
+  border-radius: 8px;
+}
+
+/* Face selection owns pointer input over the main canvas. */
+.viewer.face-select-mode .vertex-label {
+  pointer-events: none;
+}
+
+/* =========================================================
+   V1.0.3 elegant selected-face vertex presentation
+   ========================================================= */
+
+.selected-face-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.selected-face-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.face-vertex-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 9px;
+}
+
+.face-vertex-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: default;
+}
+
+.face-vertex-chip:hover {
+  border-color: #fb923c;
+  background: #ffedd5;
+}
+
+/* Face-related labels deliberately remain compact in V1.0.3. */
+.vertex-label.is-face-hover-vertex,
+.vertex-label.is-face-vertex {
+  min-width: 23px;
+  padding: 1px 4px;
+  font-size: 9px;
+  text-align: center;
+}
+
+@media (max-width: 1150px) {
+  .toolbar {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .toolbar-groups {
+    justify-content: flex-start;
+  }
+
+  .status-group {
+    max-width: none;
+  }
+}
+
+.inspector-table tbody tr.is-face-vertex {
+  background: #fff7ed;
+  color: #9a3412;
+  font-weight: 700;
 }
