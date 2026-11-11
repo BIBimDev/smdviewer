@@ -1,5 +1,5 @@
 import "./style.css";
-import { parseSmd10125 } from "./smd/parser10125";
+import { parseSmdWasm } from "./smd/wasm";
 import { parseNativeJson } from "./smd/nativeJson";
 import type { Face, ParsedSmd, Plane, Vec3 } from "./smd/types";
 import { boundingBoxText, createViewer } from "./viewer/renderer";
@@ -563,7 +563,7 @@ function decodeBuffer(buffer: ArrayBuffer): string {
   }
 }
 
-type InputSource = "TypeScript (SMD)" | "Native C++ (JSON v1)";
+type InputSource = "Native C++ (WASM)" | "Native C++ (JSON v1)";
 
 function loadParsed(parsed: ParsedSmd, sourceName: string, source: InputSource): void {
   currentParsed = parsed;
@@ -599,15 +599,16 @@ function loadError(error: unknown, sourceName: string, source: InputSource): voi
 // Only the newest file choice may update the viewer if file reads overlap.
 let loadRequest = 0;
 
-async function loadFile(file: File, source: InputSource = "TypeScript (SMD)"): Promise<void> {
+async function loadFile(file: File, source: InputSource = "Native C++ (WASM)"): Promise<void> {
   const request = ++loadRequest;
   statusText.textContent = `Reading ${file.name} — ${source}...`;
   try {
     const buffer = await file.arrayBuffer();
     if (request !== loadRequest) return;
-    const parsed = source === "TypeScript (SMD)"
-      ? parseSmd10125(decodeBuffer(buffer))
+    const parsed = source === "Native C++ (WASM)"
+      ? await parseSmdWasm(decodeBuffer(buffer))
       : parseNativeJson(new TextDecoder("utf-8", { fatal: true }).decode(buffer));
+    if (request !== loadRequest) return;
     loadParsed(parsed, file.name, source);
   } catch (error) {
     if (request === loadRequest) loadError(error, file.name, source);

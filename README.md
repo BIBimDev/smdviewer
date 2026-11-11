@@ -72,7 +72,7 @@ V2 multi-loop/hole parsing is intentionally not included.
 
 **Open native JSON** accepts the native `smd-extract` envelope
 `{"schemaVersion":1,"parsed":<ParsedSmd>}`. The status identifies the active
-source as TypeScript (SMD) or Native C++ (JSON v1). Both use the existing renderer
+source as Native C++ (WASM) or Native C++ (JSON v1). Both use the existing renderer
 and inspectors. JSON is validated before loading; recorded coordinates and
 transforms are preserved without applying any additional transform.
 
@@ -82,7 +82,9 @@ automated tests, supported structure and browser verification limits.
 
 ## Prerequisites
 
-Install Node.js 22 LTS or newer. npm is included.
+Install Node.js 22 LTS or newer, CMake 3.20+, Python 3, and the pinned Emscripten
+**4.0.20** SDK. npm is included with Node. The native GCC/MSVC library still builds
+independently without Emscripten or npm.
 
 ```powershell
 node --version
@@ -91,12 +93,28 @@ npm --version
 
 ## Run
 
-```powershell
-npm install
+```sh
+# Once, outside the repository (see docs/GEO-00-INT02.md for SDK setup):
+# emsdk install 4.0.20 && emsdk activate 4.0.20
+# source /path/to/emsdk/emsdk_env.sh
+npm ci
+npm run build:wasm
 npm run dev
 ```
 
-Or double-click:
+`.smd` selection and drop now parse entirely in-browser using the accepted C++20
+library compiled to WASM. The Windows-1252 browser decoder is retained, followed
+by UTF-8 encoding for the C++ API. The TypeScript parser stays as a test oracle;
+there is no production fallback. No JSON file or parsing server is involved.
+Generated assets under `public/wasm/` and compilation output under `build/wasm/`
+are ignored. Development/build stop with instructions if assets are missing or
+stale. Rerun `npm run build:wasm` after native source/build changes, then restart
+Vite. **Open native JSON** continues to accept extractor JSON v1.
+
+See [GEO-00-INT02](docs/GEO-00-INT02.md) for the ABI, SDK setup, tests, resource
+limits and remaining manual Firefox acceptance gate.
+
+After generating the WASM assets, you can also double-click on Windows:
 
 ```text
 start-viewer.cmd

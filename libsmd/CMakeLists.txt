@@ -13,6 +13,23 @@ else()
     target_compile_options(smd PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=off)
 endif()
 
+if(EMSCRIPTEN)
+    # Catch parser/serializer exceptions at the C boundary (also in the library).
+    target_compile_options(smd PRIVATE -fexceptions)
+    add_executable(smd-wasm wasm/bridge.cpp)
+    target_link_libraries(smd-wasm PRIVATE smd)
+    target_compile_options(smd-wasm PRIVATE -fexceptions)
+    set_target_properties(smd-wasm PROPERTIES OUTPUT_NAME smd-parser SUFFIX .mjs)
+    target_link_options(smd-wasm PRIVATE
+        -fexceptions --no-entry
+        -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,node
+        -sFILESYSTEM=0 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=16777216
+        -sMAXIMUM_MEMORY=268435456 -sSTACK_SIZE=1048576 -sABORTING_MALLOC=0
+        "-sEXPORTED_FUNCTIONS=['_malloc','_free','_smd_wasm_parse','_smd_wasm_status','_smd_wasm_data','_smd_wasm_length','_smd_wasm_destroy']"
+        "-sEXPORTED_RUNTIME_METHODS=['HEAPU8']")
+    return() # Native CLI/CTest targets retain their existing configuration.
+endif()
+
 add_executable(smd-extract tools/smd_extract.cpp)
 target_link_libraries(smd-extract PRIVATE smd)
 
