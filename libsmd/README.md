@@ -1,10 +1,15 @@
 # GEO-00: independent native SMD parser
 
 This C++20 static library ports the accepted TypeScript parser at
-`88d996f9056edf6d8b48a40263a7891d33a1ac68`. The browser parser and viewer are
-unchanged. The library and extractor have no Node, TypeScript, Three.js, browser,
+`88d996f9056edf6d8b48a40263a7891d33a1ac68`. GEO-00-INT02 also compiles the same
+library sources to WASM for the viewer; see [the integration report](../docs/GEO-00-INT02.md).
+The native library and extractor have no Node, TypeScript, Three.js, browser,
 STRAKON, or third-party native runtime dependency. There is no stable C ABI or
 cross-compiler binary compatibility promise.
+
+`wasm/bridge.h` specifies a private wasm32 C buffer ABI for that browser build.
+It does not establish a stable native or cross-compiler C ABI. Native CMake and
+CTest targets retain their previous configuration when not using Emscripten.
 
 ## Build and extraction
 
