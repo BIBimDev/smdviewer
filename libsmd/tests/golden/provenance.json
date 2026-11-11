@@ -1,0 +1,14 @@
+{
+  "task": "GEO-00",
+  "referenceCommit": "88d996f9056edf6d8b48a40263a7891d33a1ac68",
+  "generator": "libsmd/tests/export_reference.mjs",
+  "sha256": {
+    "src/smd/tokenizer.ts": "13ccabf2a7e92838f534dfd74cb99f787107acf1372a75ac1477227008654c57",
+    "src/smd/parser10125.ts": "28d447dd9e2579c0282ccdc49791de2d157e79fcbe2ff1997a0506504fd06cca",
+    "src/smd/brepDetector.ts": "468e2f047be4e756e52e647f04f698f275de786e5b4087ea2b8242f3bcdb03c2",
+    "src/smd/transform.ts": "1ba96e49b631963763c52f2c386e25647c2f432aa562d05407da98a4170853b5",
+    "src/smd/types.ts": "b01a0eafb88d000a61b32ea62a0ccc66233e4cc6497416d0fb64c1cb497d9180",
+    "public/samples/plain_column.smd": "7aeb916c47c7d7db7436b07138c3eaab4cb94e6c840e20f85658b48370303fce",
+    "public/samples/pocket_column.smd": "0d0371fef19b164a7ec0360500396c33a255191189330849b68d891b2c94d37a"
+  }
+}
