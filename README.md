@@ -1,4 +1,76 @@
-Check installation in PowerShell:
+# STRAKON SMD Viewer V1.0.3
+
+Experimental browser-based 3D viewer and geometry inspector for the currently reverse-engineered STRAKON SMD V1 subset.
+
+## V1.0.3 highlights
+
+### Interactive view cube
+
+A STRAKON-style view cube is shown in the lower-left corner of the 3D viewport.
+
+- The control is a true **3 x 3 Rubik-style cube** on every side, matching the STRAKON navigation concept.
+- Click a **center tile** for Top / Bottom / Front / Back / Left / Right orthographic views.
+- Click an **edge tile** for a two-axis oblique view.
+- Click a **corner tile** for a three-axis isometric view.
+- Together the surface tiles cover the 26 canonical camera directions around the model.
+- Drag the cube to orbit the main model using the same directional sense as the main 3D view.
+- The cube uses the same **Z-up** world basis as the rendered STRAKON element.
+- The active view tile is highlighted in orange; no separate dot overlay or surrounding card is used.
+- Use **View cube** under View options to show/hide it.
+
+### Grouped toolbar
+
+The top toolbar is divided into:
+
+- **Commands** - Open `.smd`, Fit model.
+- **View options** - Show vertices, Select faces, Face colors, Transparent, View cube.
+- **Status** - current solid/transparent, vertex, and face-selection modes plus load status.
+
+### Solid / transparent vertex visibility
+
+V1.0.3 distinguishes visible and occluded vertices.
+
+- **Solid mode** hides back-side vertices and labels that are occluded by the solid geometry from the current camera direction.
+- **Transparent mode** makes the faces translucent and allows all requested vertices to be inspected through the model.
+- The visibility updates when the camera changes.
+
+### Cleaner selected-face inspection
+
+Face selection no longer expands XYZ text for every contributing vertex over the 3D model.
+
+- Face-related vertices use compact `V#` tags in 3D.
+- Full `V# (x, y, z)` text is reserved for a directly hovered/selected vertex.
+- Selected-face coordinates are organized in the inspector using compact vertex chips plus a coordinate table.
+
+## Preserved V1.0.2 behaviour
+
+- **Show vertices OFF**: vertex-table hover temporarily requests the matching vertex; in solid mode it is shown only if visible from the camera.
+- **Show vertices ON**: visible vertices use screen-sized markers and compact `V#` labels.
+- Click a vertex row, marker, or label to select/toggle it while vertices are ON.
+- Click empty 3D space to clear persistent vertex selection.
+- Face-table hover works in every mode.
+- Persistent face selection exists only while **Select faces** is ON.
+- Turning **Select faces** OFF clears persistent face state.
+- **Face colors** keeps deterministic face coloring.
+- Inspector auto-scroll stays within the appropriate table.
+
+## Preserved V1 parser scope
+
+This release intentionally keeps the existing V1 parser model unchanged:
+
+- `"DICAD ASC"` files
+- one main `#10125` geometry block
+- explicit BREP vertices
+- single-loop polygon faces (`Face.indices[]`)
+- plane equations
+- face names
+- optional confirmed 3x4 BREP transform
+
+V2 multi-loop/hole parsing is intentionally not included.
+
+## Prerequisites
+
+Install Node.js 22 LTS or newer. npm is included.
 
 ```powershell
 node --version
@@ -7,90 +79,23 @@ npm --version
 
 ## Run
 
-Open PowerShell in this project folder:
-
 ```powershell
 npm install
 npm run dev
 ```
 
-Vite prints a local address, normally:
+Or double-click:
 
 ```text
-http://localhost:5173/
+start-viewer.cmd
 ```
 
-Open it in Chrome, Edge, or Firefox.
+Open the local address printed by Vite, normally `http://localhost:5173/`.
 
-You can:
-
-- click **Open .smd** and select a local SMD;
-- drag an `.smd` onto the 3D area;
-- load the included plain-column sample;
-- load the included pocket-column sample;
-- orbit with left mouse;
-- zoom with the mouse wheel;
-- pan with right mouse;
-- click **Fit model** to recenter the model.
-
-## Build a distributable web folder
+## Build
 
 ```powershell
 npm run build
 ```
 
-The result is written to:
-
-```text
-dist\
-```
-
-To test the production build locally:
-
-```powershell
-npm run preview
-```
-
-## Current parser strategy
-
-The viewer does not depend on fixed line numbers. It:
-
-1. verifies `"DICAD ASC"`;
-2. finds `#10125`;
-3. reads the known profile edge pattern;
-4. searches for a self-consistent explicit BREP:
-   - `N` vertices followed by `3*N` numeric coordinates;
-   - `M` variable-size polygon face records;
-   - `M` plane equations (`A B C D`);
-   - `M` face-name records;
-5. validates every face vertex against its plane equation;
-6. detects the confirmed plain-column 3x4 BREP transform when present;
-7. triangulates polygon faces with Earcut;
-8. renders with Three.js.
-
-## Acceptance samples
-
-### Plain column
-
-Expected:
-
-- profile: 750 x 650 mm
-- explicit vertices: 8
-- faces: 6
-- final bounding box: X `-375..375`, Y `-325..325`, Z `-1000..5000`
-
-### Column with top-side pocket
-
-Expected:
-
-- explicit vertices: 16
-- faces: 10
-- final bounding box: X `-375..375`, Y `-325..325`, Z `-1000..5000`
-- pocket boundary evidence: X `75..375`, Y `-125..75`, Z `4500..5000`
-
-## Important limitation
-
-This is a reverse-engineered Viewer V1, not an official STRAKON/DICAD format implementation. Unsupported geometry should produce an error rather than be guessed.
-=======
-# smdviewer
->>>>>>> origin/main
+See `docs/CHANGELOG_V1_0_3.md` and `docs/INSPECTOR_V1_0_3.md` for the new interaction details.
