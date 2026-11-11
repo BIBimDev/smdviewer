@@ -22,7 +22,7 @@ A STRAKON-style view cube is shown in the lower-left corner of the 3D viewport.
 
 The top toolbar is divided into:
 
-- **Commands** - Open `.smd`, Fit model.
+- **Commands** - Open `.smd`, Open native JSON, Fit model.
 - **View options** - Show vertices, Select faces, Face colors, Transparent, View cube.
 - **Status** - current solid/transparent, vertex, and face-selection modes plus load status.
 
@@ -67,6 +67,18 @@ This release intentionally keeps the existing V1 parser model unchanged:
 - optional confirmed 3x4 BREP transform
 
 V2 multi-loop/hole parsing is intentionally not included.
+
+## Native JSON v1 diagnostic input (GEO-00-INT01)
+
+**Open native JSON** accepts the native `smd-extract` envelope
+`{"schemaVersion":1,"parsed":<ParsedSmd>}`. The status identifies the active
+source as TypeScript (SMD) or Native C++ (JSON v1). Both use the existing renderer
+and inspectors. JSON is validated before loading; recorded coordinates and
+transforms are preserved without applying any additional transform.
+
+This is a diagnostic bridge, not a GEO-01 persistence contract. See
+[GEO-00-INT01 verification and manual steps](docs/GEO-00-INT01.md) for generation,
+automated tests, supported structure and browser verification limits.
 
 ## Prerequisites
 

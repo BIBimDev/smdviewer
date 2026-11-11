@@ -1,5 +1,6 @@
 import "./style.css";
 import { parseSmd10125 } from "./smd/parser10125";
+import { parseNativeJson } from "./smd/nativeJson";
 import type { Face, ParsedSmd, Plane, Vec3 } from "./smd/types";
 import { boundingBoxText, createViewer } from "./viewer/renderer";
 
@@ -23,6 +24,10 @@ app.innerHTML = `
             <label class="button primary">
               Open .smd
               <input id="fileInput" type="file" accept=".smd,text/plain" hidden />
+            </label>
+            <label class="button" title="Open native C++ extractor output (JSON v1)">
+              Open native JSON
+              <input id="nativeJsonInput" type="file" accept=".json,application/json" hidden />
             </label>
             <button id="fitButton" class="button" type="button">Fit model</button>
           </div>
@@ -56,7 +61,7 @@ app.innerHTML = `
         <section class="panel">
           <h2>File / Object</h2>
           <dl id="objectInfo" class="info-list">
-            <dt>Status</dt><dd>Open an SMD file.</dd>
+            <dt>Status</dt><dd>Open an SMD file or native C++ JSON v1.</dd>
           </dl>
         </section>
 
@@ -126,6 +131,7 @@ function mustQuery<T extends Element>(selector: string): T {
 
 const viewerElement = mustQuery<HTMLElement>("#viewer");
 const fileInput = mustQuery<HTMLInputElement>("#fileInput");
+const nativeJsonInput = mustQuery<HTMLInputElement>("#nativeJsonInput");
 const objectInfo = mustQuery<HTMLElement>("#objectInfo");
 const geometryInfo = mustQuery<HTMLElement>("#geometryInfo");
 const statusText = mustQuery<HTMLElement>("#statusText");
@@ -557,46 +563,70 @@ function decodeBuffer(buffer: ArrayBuffer): string {
   }
 }
 
-function loadText(text: string, sourceName: string): void {
-  try {
-    statusText.textContent = `Parsing ${sourceName}...`;
-    const parsed = parseSmd10125(text);
-    currentParsed = parsed;
-    viewer.load(parsed);
-    viewer.setVerticesVisible(verticesVisible);
-    viewer.setFaceSelectMode(faceSelectMode);
-    viewer.setFaceColors(faceColorsEnabled);
-    viewer.setTransparent(transparentMode);
-    viewer.setViewCubeVisible(viewCubeVisible);
-    updateModeStatus();
-    updateInfo(parsed, sourceName);
-    populateInspector(parsed);
-    statusText.textContent = `Loaded ${sourceName}: ${parsed.geometry.brep.verticesWorld.length} vertices, ${parsed.geometry.brep.faces.length} faces.`;
-  } catch (error) {
-    currentParsed = null;
-    viewer.clear();
-    const message = error instanceof Error ? error.message : String(error);
-    objectInfo.innerHTML = `<dt>Error</dt><dd>${esc(message)}</dd>`;
-    geometryInfo.innerHTML = "";
-    vertexCountBadge.textContent = "0";
-    faceCountBadge.textContent = "0";
-    vertexTableBody.innerHTML = `<tr><td colspan="4" class="empty-cell">No supported geometry.</td></tr>`;
-    faceTableBody.innerHTML = `<tr><td colspan="3" class="empty-cell">No supported geometry.</td></tr>`;
-    applySelectedVertexUi(null);
-    applySelectedFaceUi(null);
-    statusText.textContent = `Could not load ${sourceName}.`;
-  }
+type InputSource = "TypeScript (SMD)" | "Native C++ (JSON v1)";
+
+function loadParsed(parsed: ParsedSmd, sourceName: string, source: InputSource): void {
+  currentParsed = parsed;
+  viewer.load(parsed);
+  viewer.setVerticesVisible(verticesVisible);
+  viewer.setFaceSelectMode(faceSelectMode);
+  viewer.setFaceColors(faceColorsEnabled);
+  viewer.setTransparent(transparentMode);
+  viewer.setViewCubeVisible(viewCubeVisible);
+  updateModeStatus();
+  updateInfo(parsed, sourceName);
+  populateInspector(parsed);
+  statusText.textContent = `Loaded ${sourceName} — ${source}: ${parsed.geometry.brep.verticesWorld.length} vertices, ${parsed.geometry.brep.faces.length} faces.`;
 }
 
-async function loadFile(file: File): Promise<void> {
-  const buffer = await file.arrayBuffer();
-  loadText(decodeBuffer(buffer), file.name);
+function loadError(error: unknown, sourceName: string, source: InputSource): void {
+  currentParsed = null;
+  viewer.clear();
+  const message = error instanceof Error ? error.message : String(error);
+  objectInfo.innerHTML = `<dt>Error</dt><dd>${esc(message)}</dd>`;
+  geometryInfo.innerHTML = "";
+  vertexCountBadge.textContent = "0";
+  faceCountBadge.textContent = "0";
+  vertexTableBody.innerHTML = `<tr><td colspan="4" class="empty-cell">No supported geometry.</td></tr>`;
+  faceTableBody.innerHTML = `<tr><td colspan="3" class="empty-cell">No supported geometry.</td></tr>`;
+  applySelectedVertexUi(null);
+  applySelectedFaceUi(null);
+  setVertexRowHover(null);
+  setFaceRowHover(null);
+  statusText.textContent = `Could not load ${sourceName} — ${source}: ${message}`;
+}
+
+// Only the newest file choice may update the viewer if file reads overlap.
+let loadRequest = 0;
+
+async function loadFile(file: File, source: InputSource = "TypeScript (SMD)"): Promise<void> {
+  const request = ++loadRequest;
+  statusText.textContent = `Reading ${file.name} — ${source}...`;
+  try {
+    const buffer = await file.arrayBuffer();
+    if (request !== loadRequest) return;
+    const parsed = source === "TypeScript (SMD)"
+      ? parseSmd10125(decodeBuffer(buffer))
+      : parseNativeJson(new TextDecoder("utf-8", { fatal: true }).decode(buffer));
+    loadParsed(parsed, file.name, source);
+  } catch (error) {
+    if (request === loadRequest) loadError(error, file.name, source);
+  }
 }
 
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
+  fileInput.value = "";
   if (file) {
     void loadFile(file);
+  }
+});
+
+nativeJsonInput.addEventListener("change", () => {
+  const file = nativeJsonInput.files?.[0];
+  nativeJsonInput.value = "";
+  if (file) {
+    void loadFile(file, "Native C++ (JSON v1)");
   }
 });
 
