@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:native-json": "node tests/native-json.mjs"
   },
   "dependencies": {
     "earcut": "^3.0.2",
