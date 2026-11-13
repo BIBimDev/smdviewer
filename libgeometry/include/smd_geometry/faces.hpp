@@ -16,7 +16,8 @@ struct FaceConversion {
     std::vector<TopoDS_Face> faces;
 };
 
-// GEO-01A: strict convex single-loop planar polygons in verticesLocal (mm).
+// GEO-01B: simple convex/concave single-loop planar polygons, no collinear
+// corners, in verticesLocal (mm). Boundary contact tolerance: 1e-7 mm.
 // Never reads verticesWorld or applies transforms; input remains authoritative.
 // Owns all returned OCCT handles, with no references to the input's lifetime.
 // Throws std::runtime_error with zero-based source indices on invalid/unsupported

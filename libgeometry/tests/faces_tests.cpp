@@ -34,6 +34,12 @@ smd::ParsedBrep square() {
     b.faces = {{1, {0,1,2,3}, smd::Plane{0,0,1,-2}, "square"}};
     return b;
 }
+smd::ParsedSmd readFixture(const char* path) {
+    std::ifstream input(path, std::ios::binary);
+    require(input.good(), "fixture is readable: " + std::string(path));
+    const std::string text{std::istreambuf_iterator<char>(input), {}};
+    return smd::parseSmd10125(text);
+}
 void rejects(const smd::ParsedBrep& b, std::initializer_list<std::string> diagnostics) {
     try { (void)smd_geometry::convertFaces(b); }
     catch (const std::runtime_error& e) {
@@ -67,6 +73,9 @@ void check(const smd::ParsedBrep& b, const smd_geometry::FaceConversion& result,
         const auto& originalPlane = *b.faces[f].plane;
         const gp_Dir originalNormal(originalPlane.a, originalPlane.b, originalPlane.c);
         near(std::abs(plane.Axis().Direction().Dot(originalNormal)), 1, 1e-12, "original plane normal locus");
+        const double offset = originalPlane.d / std::hypot(originalPlane.a, originalPlane.b, originalPlane.c);
+        near(plane.Distance(gp_Pnt(-offset * originalNormal.X(), -offset * originalNormal.Y(),
+                                  -offset * originalNormal.Z())), 0, 1e-10, "original supporting plane location");
         const auto wire = BRepTools::OuterWire(face);
         require(!wire.IsNull() && BRep_Tool::IsClosed(wire), "closed outer wire");
         std::size_t wires = 0;
@@ -98,11 +107,8 @@ int main(int argc, char** argv) {
         body(); std::cout << "ok " << ++checks << " - " << name << '\n';
     };
     try {
-        require(argc == 2, "Usage: smd-geometry-tests plain_column.smd");
-        std::ifstream input(argv[1], std::ios::binary);
-        require(input.good(), "fixture is readable");
-        const std::string text{std::istreambuf_iterator<char>(input), {}};
-        auto parsed = smd::parseSmd10125(text);
+        require(argc == 3, "Usage: smd-geometry-tests plain_column.smd pocket_column.smd");
+        auto parsed = readFixture(argv[1]);
         auto& b = parsed.geometry.brep;
         test("plain column: six ordered faces, areas, planes, exact shared local vertices", [&] {
             require(b.verticesLocal.size() == 8 && b.faces.size() == 6 && b.transform.has_value(), "accepted specimen");
@@ -110,6 +116,17 @@ int main(int argc, char** argv) {
             check(b, smd_geometry::convertFaces(b), {487500,487500,4500000,3900000,4500000,3900000});
             require(smd::toJsonV1(parsed) == before, "all source evidence preserved");
             require(b.verticesLocal[0].x == -750 && b.verticesWorld[0].x == -375, "distinct fixture frames");
+        });
+        test("pocket column: ten ordered faces, full concave loops, planes and shared local vertices", [&] {
+            const auto pocket = readFixture(argv[2]);
+            const auto& source = pocket.geometry.brep;
+            require(source.verticesLocal.size() == 16 && source.faces.size() == 10, "accepted pocket counts");
+            require(source.faces[0].indices == std::vector<std::size_t>{0,1,2,3,5,6,7,4}, "face 0 eight-edge loop");
+            require(source.faces[3].indices == std::vector<std::size_t>{0,13,12,6,5,11,10,1}, "face 3 eight-edge loop");
+            const auto before = smd::toJsonV1(pocket);
+            check(source, smd_geometry::convertFaces(source),
+                  {427500,487500,4500000,3800000,4500000,3900000,60000,150000,100000,150000});
+            require(smd::toJsonV1(pocket) == before, "all pocket source evidence preserved");
         });
         test("world vertices and recorded transforms never used", [&] {
             auto local = b;
@@ -132,6 +149,24 @@ int main(int argc, char** argv) {
             std::reverse(s.faces[0].indices.begin(), s.faces[0].indices.end());
             check(s, smd_geometry::convertFaces(s), {100});
         });
+        test("simple concavity retains every loop start and direction on axial and oblique planes", [&] {
+            for (const bool oblique : {false, true}) {
+                auto s = square(); s.verticesLocal[2] = {2,2,2};
+                if (oblique) {
+                    for (auto& v : s.verticesLocal) v.z = v.x + v.y + 2;
+                    s.faces[0].plane = smd::Plane{1,1,-1,2};
+                }
+                const double area = 20 * (oblique ? std::sqrt(3.0) : 1);
+                for (int direction = 0; direction < 2; ++direction) {
+                    for (int start = 0; start < 4; ++start) {
+                        check(s, smd_geometry::convertFaces(s), {area});
+                        auto& loop = s.faces[0].indices;
+                        std::rotate(loop.begin(), loop.begin() + 1, loop.end());
+                    }
+                    std::reverse(s.faces[0].indices.begin(), s.faces[0].indices.end());
+                }
+            }
+        });
         test("unnormalized and negated plane coefficients", [&] {
             for (const auto scale : {1e-200, -7.0, 1e200}) {
                 auto s = square(); s.faces[0].plane = smd::Plane{0,0,scale,-2*scale};
@@ -144,7 +179,12 @@ int main(int argc, char** argv) {
             auto s = square(); s.verticesLocal[0].z += 5e-8;
             for (const auto scale : {1e-10, 1e10}) {
                 s.faces[0].plane = smd::Plane{0,0,scale,-2*scale};
-                require(smd_geometry::convertFaces(s).faces.size() == 1, "within geometric tolerance");
+                const auto result = smd_geometry::convertFaces(s);
+                require(result.faces.size() == 1, "within geometric tolerance");
+                near(BRepAdaptor_Surface(result.faces[0]).Plane().Distance(gp_Pnt(0,0,2)), 0, 1e-12,
+                     "original plane is not refitted to tolerance-offset vertices");
+                require(BRep_Tool::Pnt(result.vertices[0]).Z() == s.verticesLocal[0].z,
+                        "tolerance-offset vertex is not snapped");
             }
             s.verticesLocal[0].z += 1e-5;
             rejects(s, {"SourceFace[0]", "SourceVertex[0]", "plane distance"});
@@ -198,17 +238,51 @@ int main(int argc, char** argv) {
             s = square(); s.verticesLocal[1] = {1e-10,0,2};
             rejects(s, {"SourceFace[0]", "sub-tolerance"});
         });
-        test("collinear, concave and self-intersecting boundaries rejected", [&] {
+        test("degenerate loops and consecutive collinear corners rejected", [&] {
             auto s = square(); s.verticesLocal[2] = {20,0,2}; s.faces[0].indices = {0,1,2};
-            rejects(s, {"SourceFace[0]", "degenerate"});
-            s = square(); s.verticesLocal[2] = {2,2,2};
-            rejects(s, {"SourceFace[0]", "non-convex"});
+            rejects(s, {"SourceFace[0]", "collinear"});
+            s = square(); s.verticesLocal = {{0,0,2},{5,0,2},{10,0,2},{10,10,2},{0,10,2}};
+            s.faces[0].indices = {0,1,2,3,4};
+            rejects(s, {"SourceFace[0]", "SourceVertex[1]", "collinear"});
+        });
+        test("crossing boundaries rejected, including nonzero signed area", [&] {
+            auto s = square(); s.faces[0].indices = {0,2,1,3};
+            rejects(s, {"SourceFace[0]", "nonadjacent boundary edges", "cross"});
             s = square(); s.faces[0].indices = {0,2,1,3};
-            rejects(s, {"SourceFace[0]", "degenerate"});
-            // Star with consistent local turns still must fail global convexity.
-            s = square(); s.verticesLocal = {{0,3,2},{3,1,2},{2,-3,2},{-2,-3,2},{-3,1,2}};
+            s.verticesLocal[3].y = 8;
+            rejects(s, {"SourceFace[0]", "nonadjacent boundary edges", "cross"});
+        });
+        test("star with consistent local turns rejected", [&] {
+            auto s = square(); s.verticesLocal = {{0,3,2},{3,1,2},{2,-3,2},{-2,-3,2},{-3,1,2}};
             s.faces[0].indices = {0,2,4,1,3};
-            rejects(s, {"SourceFace[0]", "non-convex"});
+            rejects(s, {"SourceFace[0]", "nonadjacent boundary edges", "cross"});
+        });
+        test("nonadjacent vertex contact with edge interior rejected", [&] {
+            auto s = square(); s.verticesLocal = {{0,0,2},{10,0,2},{10,10,2},{5,0,2},{0,10,2}};
+            s.faces[0].indices = {0,1,2,3,4};
+            rejects(s, {"SourceFace[0]", "nonadjacent boundary edges", "touch"});
+        });
+        test("nonadjacent overlapping edges rejected", [&] {
+            auto s = square();
+            s.verticesLocal = {{0,0,2},{10,0,2},{10,10,2},{2,0,2},{8,0,2},{0,10,2}};
+            // Visit the short segment first so the overlapping pair is checked
+            // before contacts with the edges joining it to the longer segment.
+            s.faces[0].indices = {3,4,5,0,1,2};
+            rejects(s, {"SourceFace[0]", "nonadjacent boundary edges 0 and 3", "overlap"});
+        });
+        test("adjacent backtracking rejected including at closing corner", [&] {
+            auto s = square(); s.verticesLocal = {{0,0,2},{10,0,2},{5,0,2},{10,10,2},{0,10,2}};
+            s.faces[0].indices = {0,1,2,3,4};
+            rejects(s, {"SourceFace[0]", "SourceVertex[1]", "backtracking"});
+            s.faces[0].indices = {1,2,3,4,0};
+            rejects(s, {"SourceFace[0]", "SourceVertex[1]", "backtracking"});
+        });
+        test("2D contact tolerance rejects near contacts without merging distinct coordinates", [&] {
+            auto s = square(); s.verticesLocal = {{0,0,2},{10,0,2},{10,10,2},{5,5e-8,2},{0,10,2}};
+            s.faces[0].indices = {0,1,2,3,4};
+            rejects(s, {"SourceFace[0]", "contact tolerance 1e-7 mm"});
+            s.verticesLocal[3].y = 1e-4;
+            check(s, smd_geometry::convertFaces(s), {50.0005});
         });
         test("nonadjacent repeated source index rejected", [&] {
             auto s = square(); s.faces[0].indices = {0,1,2,0,3};
@@ -221,7 +295,7 @@ int main(int argc, char** argv) {
         test("empty face collection rejected", [&] {
             auto s = square(); s.faces.clear(); rejects(s, {"no faces"});
         });
-        std::cout << checks << " GEO-01A checks passed\n";
+        std::cout << checks << " GEO-01B checks passed\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "After " << checks << " successful checks: " << e.what() << '\n'; return 1;

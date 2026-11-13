@@ -1,4 +1,4 @@
-# GEO-01A: native source polygons to OCCT faces
+# GEO-01B: native source polygons to OCCT faces
 
 `smd-geometry` depends on `smd` and **Open CASCADE Technology 8.0.1 exactly**.
 The parser, JSON v1 and browser/WASM builds do not depend on OCCT. Nothing is
@@ -15,12 +15,12 @@ OCCT installation uses shared libraries, C++20, Release, without TBB or GUI modu
 Linux, from the repository root:
 
 ```sh
-cmake -S . -B /tmp/smd-geo01a-build -DCMAKE_BUILD_TYPE=Release \
+cmake -S . -B /tmp/smd-geo01b-build -DCMAKE_BUILD_TYPE=Release \
   -DSMD_BUILD_GEOMETRY=ON \
   -DOpenCASCADE_DIR=/path/to/occt-8.0.1/lib/cmake/opencascade
-cmake --build /tmp/smd-geo01a-build --parallel
+cmake --build /tmp/smd-geo01b-build --parallel
 export LD_LIBRARY_PATH=/path/to/occt-8.0.1/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-ctest --test-dir /tmp/smd-geo01a-build --output-on-failure
+ctest --test-dir /tmp/smd-geo01b-build --output-on-failure
 ```
 
 Use the actual directory containing `OpenCASCADEConfig.cmake` (some installations
@@ -32,16 +32,19 @@ when geometry is enabled. Required toolkit targets are checked explicitly.
 Windows, in an x64 MSVC developer PowerShell with an LF checkout:
 
 ```powershell
-cmake -S . -B "$env:TEMP/smd-geo01a-build" -A x64 `
+cmake -S . -B "$env:TEMP/smd-geo01b-build" -A x64 `
   -DSMD_BUILD_GEOMETRY=ON -DOpenCASCADE_DIR=C:/occt-8.0.1/cmake
-cmake --build "$env:TEMP/smd-geo01a-build" --config Release --parallel
+cmake --build "$env:TEMP/smd-geo01b-build" --config Release --parallel
 # Use the directory containing TKernel.dll in your installation:
 $env:PATH = "C:/occt-8.0.1/win64/vc14/bin;$env:PATH"
-ctest --test-dir "$env:TEMP/smd-geo01a-build" -C Release --output-on-failure
+ctest --test-dir "$env:TEMP/smd-geo01b-build" -C Release --output-on-failure
 ```
 
 Select the installed OCCT compiler/configuration's actual DLL directory. Windows
 has **not** been executed here; these commands require independent verification.
+Windows/MSVC verification is required before GEO-01B acceptance; the
+[GEO-01B report](../docs/GEO-01B.md) includes kernel acquisition/build commands
+and the default parser-only check for a clean Windows environment.
 See `libsmd/README.md` for the LF requirement of oracle fingerprint tests.
 
 Geometry is **off by default**. Both parser-only routes remain supported:
@@ -96,19 +99,39 @@ triple with round-trip precision. No proximity-based deduplication occurs.
 
 ## Supported boundary and numerical policy
 
-GEO-01A supports one **strictly convex**, single-loop planar polygon per source
-face, with at least three distinct vertices and a finite, nonzero plane normal.
-An implicit closing edge joins the last index to the first. An explicitly repeated
-closing index, other repeated indices, collinear corners, concave boundaries and
-self-intersections are rejected. Non-convex acceptance is deferred to GEO-01B.
-The strict convexity check tests all other vertices against each directed edge
-(O(n²) per face), also rejecting star loops with locally consistent turns.
+GEO-01B supports one **simple convex or concave**, single-loop planar polygon per
+source face, with at least three distinct vertices and a finite, nonzero plane
+normal. An implicit closing edge joins the last index to the first. An explicitly
+repeated closing index, other repeated indices, consecutive collinear corners,
+adjacent backtracking and nonadjacent edge crossings, touches or overlaps are
+rejected. Ordinary shared endpoints of adjacent edges (including last/first) are
+valid. Faces are not split or triangulated for conversion.
 
-The fixed distance tolerance is **1e-7 mm**, matching OCCT's default topology
-tolerance. Edges at or below this length are rejected, not merged. Each non-edge
-vertex must be more than that distance to the interior side of each boundary
-edge. Doubled polygon area at or below `(1e-7 mm)²` is rejected. These are support
-limits, not a general tolerance or healing policy for later milestones.
+The fixed distance tolerance remains **1e-7 mm**, matching OCCT's default topology
+tolerance. Source boundary edges at or below this length are rejected, not merged.
+The same minimum length is required in the temporary projection. Doubled polygon
+area at or below `(1e-7 mm)²` is rejected. These are support limits, not a general
+tolerance or healing policy for later milestones.
+
+Boundary validation temporarily projects coordinates orthogonally onto an
+orthonormal 2D basis of the **original source plane**, using the first loop vertex
+as the local numerical origin. This changes neither source nor OCCT vertices.
+All 2D distance predicates use **1e-7 mm** in that plane:
+
+- At each consecutive corner, both free endpoints must be farther than this
+  distance from the other edge's infinite supporting line. This rejects collinear
+  and near-collinear corners, including backtracking; either turn sign is valid.
+- Every nonadjacent segment pair is checked for a proper crossing using signed
+  line distances. Otherwise, a minimum endpoint-to-closed-segment distance at or
+  below the tolerance is treated as contact. This rejects exact touches/overlaps
+  and conservatively rejects narrow gaps at or below `1e-7 mm`, without snapping
+  or merging anything. Adjacent pairs share their endpoint and are excluded from
+  this pairwise contact test; their corner check still applies.
+
+The pairwise test takes O(n²) time per face and O(n) temporary storage. It uses
+double arithmetic, not exact predicates; non-finite intermediate results fail
+explicitly. Distances have units of millimetres, avoiding an unscaled cross-product
+epsilon whose meaning would depend on edge length.
 
 For the original equation `Ax + By + Cz + D = 0`, coefficients are normalized
 using the largest absolute normal component first, avoiding overflow/underflow
@@ -136,9 +159,13 @@ and exits nonzero. Production CLI/framework additions are unnecessary here.
 
 ## Evidence and scope
 
-**Sample-verified** behaviour is recorded in [the technical report](../docs/GEO-01A.md).
-The only geometry regression specimen is the accepted `plain_column.smd`.
+**Sample-verified** behaviour is recorded in [the GEO-01B report](../docs/GEO-01B.md),
+with the original integration evidence retained in [GEO-01A](../docs/GEO-01A.md).
+The geometry regressions are the accepted `plain_column.smd` (8 vertices, 6 faces)
+and `pocket_column.smd` (16 vertices, 10 faces). The pocket's source faces 0 and 3
+each remain one face with eight edges, with areas 427500 and 3800000 mm².
 Passing synthetic polygons establishes the stated numerical/support policy,
 not additional STRAKON format rules. General SMD geometry, multiple loops,
-non-convex polygons, shell/solid topology and downstream feature interpretation
-remain unsupported or outside this milestone.
+collinear corners, shell/solid topology and downstream feature interpretation
+remain unsupported or outside this milestone. Newer corbel specimens have not
+been qualified. Windows/MSVC remains pending.

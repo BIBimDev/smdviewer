@@ -29,5 +29,6 @@ if(BUILD_TESTING)
     add_executable(smd-geometry-tests tests/faces_tests.cpp)
     target_link_libraries(smd-geometry-tests PRIVATE smd-geometry)
     add_test(NAME geometry-faces COMMAND smd-geometry-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd")
 endif()
