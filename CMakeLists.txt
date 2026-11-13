@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.20)
+project(smdviewer_native LANGUAGES CXX)
+
+include(CTest)
+option(SMD_BUILD_GEOMETRY "Build GEO-01A native OCCT face conversion" OFF)
+add_subdirectory(libsmd)
+if(SMD_BUILD_GEOMETRY)
+    if(EMSCRIPTEN)
+        message(FATAL_ERROR "GEO-01A requires a native toolchain; OCCT is not part of the WASM build")
+    endif()
+    add_subdirectory(libgeometry)
+endif()
