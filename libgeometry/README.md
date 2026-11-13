@@ -6,8 +6,13 @@ downloaded by the project build. No source evidence is persisted in a new format
 
 ## Build
 
-Requirements: CMake 3.20+, C++20 compiler, installed OCCT 8.0.1 development files
-(at least TKTopAlgo and its dependencies), and Python 3.9+ for parser regressions.
+Requirements: CMake 3.20+, a C++20 compiler, installed OCCT 8.0.1 development
+files for `TKTopAlgo`, `TKBO` and their dependencies, and Python 3.9+ for parser
+regressions. An OCCT installation built only for the GEO-01/GEO-02A toolkit
+set is insufficient for the geometry-enabled build. See the
+[GEO-02B build instructions](../docs/GEO-02B.md#toolchains-and-reproduction)
+for adding `TKBO` and its dependencies. The default parser-only build still
+does not require OCCT.
 OCCT and the application must use compatible compiler, architecture, C++ runtime
 and build configurations. The geometry component is a static library; the tested
 OCCT installation uses shared libraries, C++20, Release, without TBB or GUI modules.
@@ -40,11 +45,9 @@ $env:PATH = "C:/occt-8.0.1/win64/vc14/bin;$env:PATH"
 ctest --test-dir "$env:TEMP/smd-geo01b-build" -C Release --output-on-failure
 ```
 
-Select the installed OCCT compiler/configuration's actual DLL directory. Windows
-has **not** been executed here; these commands require independent verification.
-Windows/MSVC verification is required before GEO-01B acceptance; the
-[GEO-01B report](../docs/GEO-01B.md) includes kernel acquisition/build commands
-and the default parser-only check for a clean Windows environment.
+Select the actual DLL directory for the installed OCCT compiler and build
+configuration. The [GEO-02B Windows verification](../docs/GEO-02B.md#windows-x64msvc--executed-first)
+records the tested toolkit configuration and commands for both build modes.
 See `libsmd/README.md` for the LF requirement of oracle fingerprint tests.
 
 Geometry is **off by default**. Both parser-only routes remain supported:
