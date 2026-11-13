@@ -30,6 +30,79 @@ namespace {
 }
 gp_Pnt point(const smd::Vec3& v) { return {v.x, v.y, v.z}; }
 
+struct Point2 { double x, y; };
+struct Edge2 {
+    Point2 start, end;
+    double ux, uy, length; // Unit direction and length in the temporary plane.
+};
+
+double finitePredicate(double value, std::size_t face) {
+    if (!std::isfinite(value)) fail(face, "2D boundary predicate outside numerical range");
+    return value;
+}
+double lineDistance(const Edge2& edge, const Point2& p, std::size_t face) {
+    return finitePredicate(edge.ux * (p.y - edge.start.y) - edge.uy * (p.x - edge.start.x), face);
+}
+double segmentDistance(const Edge2& edge, const Point2& p, std::size_t face) {
+    const double dx = p.x - edge.start.x, dy = p.y - edge.start.y;
+    const double along = std::clamp(finitePredicate(dx * edge.ux + dy * edge.uy, face), 0.0, edge.length);
+    return finitePredicate(std::hypot(dx - along * edge.ux, dy - along * edge.uy), face);
+}
+bool oppositeSigns(double a, double b) {
+    return (a < 0 && b > 0) || (a > 0 && b < 0);
+}
+
+void validateBoundary(const smd::ParsedBrep& source, std::size_t f, const gp_Pln& plane) {
+    const auto& loop = source.faces[f].indices;
+    const auto origin = point(source.verticesLocal[loop[0]]);
+    const gp_Vec xAxis(plane.Position().XDirection()), yAxis(plane.Position().YDirection());
+    std::vector<Point2> projected;
+    projected.reserve(loop.size());
+    for (const auto index : loop) {
+        const gp_Vec relative(origin, point(source.verticesLocal[index]));
+        // Orthogonal projection for validation only; no source/OCCT vertex changes.
+        projected.push_back({finitePredicate(relative.Dot(xAxis), f), finitePredicate(relative.Dot(yAxis), f)});
+    }
+    std::vector<Edge2> edges;
+    edges.reserve(loop.size());
+    for (std::size_t j = 0; j < loop.size(); ++j) {
+        const auto a = projected[j], b = projected[(j + 1) % loop.size()];
+        const double dx = b.x - a.x, dy = b.y - a.y;
+        const double length = finitePredicate(std::hypot(dx, dy), f);
+        if (length <= distanceToleranceMm)
+            fail(f, "degenerate projected boundary edge " + std::to_string(j));
+        edges.push_back({a, b, dx / length, dy / length, length});
+    }
+    for (std::size_t j = 0; j < edges.size(); ++j) {
+        const auto& incoming = edges[j];
+        const auto next = (j + 1) % edges.size();
+        const auto& outgoing = edges[next];
+        // Both free endpoints must be farther than tolerance from the other
+        // edge's supporting line. Either turn sign is valid (convex or concave).
+        if (std::abs(lineDistance(incoming, outgoing.end, f)) <= distanceToleranceMm ||
+            std::abs(lineDistance(outgoing, incoming.start, f)) <= distanceToleranceMm)
+            fail(f, "adjacent backtracking or collinear corner at SourceVertex[" +
+                 std::to_string(loop[next]) + "]");
+    }
+    for (std::size_t j = 0; j < edges.size(); ++j) {
+        for (std::size_t k = j + 1; k < edges.size(); ++k) {
+            // Ordinary adjacent shared endpoints, including last/first, are valid.
+            if (k == j + 1 || (j == 0 && k + 1 == edges.size())) continue;
+            const auto& a = edges[j];
+            const auto& b = edges[k];
+            const bool crosses = oppositeSigns(lineDistance(a, b.start, f), lineDistance(a, b.end, f)) &&
+                                 oppositeSigns(lineDistance(b, a.start, f), lineDistance(b, a.end, f));
+            // For disjoint finite segments the minimum distance is attained at
+            // an endpoint. This catches touches, overlaps and near contacts.
+            const double separation = std::min({segmentDistance(a, b.start, f), segmentDistance(a, b.end, f),
+                                                segmentDistance(b, a.start, f), segmentDistance(b, a.end, f)});
+            if (crosses || separation <= distanceToleranceMm)
+                fail(f, "nonadjacent boundary edges " + std::to_string(j) + " and " + std::to_string(k) +
+                     " cross, touch or overlap (contact tolerance 1e-7 mm)");
+        }
+    }
+}
+
 void validateVertices(const std::vector<smd::Vec3>& vertices) {
     // Ordered map: O(V log V), exact double comparisons, +0 == -0.
     // Reject NaN before it can violate map ordering. Includes unused vertices.
@@ -84,6 +157,9 @@ gp_Pln validateFace(const smd::ParsedBrep& source, std::size_t f) {
         if (!std::isfinite(residual) || std::abs(residual) > distanceToleranceMm)
             fail(f, "SourceVertex[" + std::to_string(index) + "] exceeds plane distance tolerance 1e-7 mm");
     }
+    // A point derived from the ORIGINAL equation, not a fitted polygon plane.
+    const gp_Pnt planeOrigin(-offset * normal.X(), -offset * normal.Y(), -offset * normal.Z());
+    validateBoundary(source, f, gp_Pln(planeOrigin, gp_Dir(normal)));
     const auto origin = point(source.verticesLocal[loop[0]]);
     gp_Vec area;
     for (std::size_t j = 1; j + 1 < loop.size(); ++j)
@@ -92,24 +168,8 @@ gp_Pln validateFace(const smd::ParsedBrep& source, std::size_t f) {
     const double signedArea2 = area.Dot(normal);
     if (!std::isfinite(signedArea2) || std::abs(signedArea2) <= distanceToleranceMm * distanceToleranceMm)
         fail(f, "degenerate polygon area");
-    // A point derived from the ORIGINAL equation, not a fitted polygon plane.
-    const gp_Pnt planeOrigin(-offset * normal.X(), -offset * normal.Y(), -offset * normal.Z());
     // Orient the supporting plane to source winding, never reverse the loop.
     if (signedArea2 < 0) normal.Reverse();
-    // Every non-endpoint must lie strictly to the left of every directed edge.
-    // This rejects concavity, collinear corners and self-intersecting star loops.
-    for (std::size_t j = 0; j < loop.size(); ++j) {
-        const auto a = point(source.verticesLocal[loop[j]]);
-        const auto next = (j + 1) % loop.size();
-        const gp_Vec edge(a, point(source.verticesLocal[loop[next]]));
-        for (std::size_t k = 0; k < loop.size(); ++k) {
-            if (k == j || k == next) continue;
-            const double side = edge.Crossed(gp_Vec(a, point(source.verticesLocal[loop[k]]))).Dot(normal);
-            if (!std::isfinite(side) || side <= distanceToleranceMm * edge.Magnitude())
-                fail(f, "degenerate or unsupported non-convex boundary at SourceVertex[" +
-                     std::to_string(loop[k]) + "]");
-        }
-    }
     return {planeOrigin, gp_Dir(normal)};
 }
 } // namespace
