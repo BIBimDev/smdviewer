@@ -149,6 +149,64 @@ void lineage(const smd_geometry::BooleanSolid& part, std::size_t sourceCount) {
         }
     }
 }
+void samePoint(const smd::Vec3& actual, const smd::Vec3& expected, const std::string& why) {
+    require(actual.x==expected.x && actual.y==expected.y && actual.z==expected.z,why);
+}
+void qualifyCandidate(const smd::ParsedBrep& source,
+                      const smd_geometry::PrincipalPrismCandidate& b, int fixture) {
+    // Independent raw-source references from GEO-02C, not whole-body XY bounds.
+    const double bottom=-2649.999999501579, top=fixture==4?10060.0:10000.0;
+    samePoint(b.minimumLocalMm,{-250,-250,bottom},"exact source-local candidate minimum");
+    samePoint(b.maximumLocalMm,{250,250,top},"exact source-local candidate maximum");
+    samePoint(b.dimensionsMm,{500,500,top-bottom},"500 x 500 principal section and unrounded height");
+    require(b.supportingFaceOrdinal==5,"supporting source-face ordinal 5");
+    // Only ordered boundary-loop vertices participate in this independent Z check.
+    double minimum=source.verticesLocal.at(source.faces.at(0).indices.at(0)).z, maximum=minimum;
+    for(const auto& face:source.faces) for(auto index:face.indices) {
+        const double z=source.verticesLocal.at(index).z;
+        minimum=std::min(minimum,z); maximum=std::max(maximum,z);
+    }
+    require(b.minimumLocalMm.z==minimum && b.maximumLocalMm.z==maximum,
+            "candidate Z extent equals raw boundary vertex extrema");
+    for(auto index:source.faces.at(b.supportingFaceOrdinal).indices)
+        require(source.verticesLocal.at(index).z==minimum,"recorded support is the raw minimum-Z cap");
+    const auto point=[&](std::size_t index,smd::Vec3 expected) {
+        samePoint(source.verticesLocal.at(index),expected,"unrounded reference source vertex "+std::to_string(index));
+    };
+    if(fixture==4) {
+        point(8,{49.99999999999818,250,3740.000000000002});
+        point(7,{250,250,4040.000000000002});
+        point(12,{49.99999999999818,500,3740.0000000000023});
+        point(14,{250,500,4040.0000000000023});
+    } else {
+        point(16,{50,-250,3740.0000000000023});
+        point(15,{250,-250,4040.0000000000023});
+        point(21,{50,-500,3740.0000000000023});
+        point(23,{250,-500,4040.0000000000023});
+        point(3,{-250,110,10000});
+        point(4,{10.000000000549335,110.00000000000003,10000});
+        point(10,{-250,-110.00000000000003,9255});
+        point(18,{10.000000000549335,-110,9255});
+        point(19,{10.000000000549335,110,9255});
+    }
+}
+void reportLineage(const char* label,const smd_geometry::BooleanSolid& part) {
+    using namespace smd_geometry;
+    std::size_t source=0,candidate=0,unknown=0,modified=0,generated=0,unchanged=0;
+    for(const auto& face:part.faces) {
+        bool s=false,c=false,u=false,m=false,g=false,n=false;
+        for(const auto& a:face.ancestors) {
+            s |= a.origin==FaceOrigin::Source; c |= a.origin==FaceOrigin::Candidate;
+            u |= a.origin==FaceOrigin::Unknown; m |= a.change==FaceChange::Modified;
+            g |= a.change==FaceChange::Generated; n |= a.change==FaceChange::Unchanged;
+        }
+        source+=s; candidate+=c; unknown+=u; modified+=m; generated+=g; unchanged+=n;
+    }
+    // Counts are faces with each contributor/change; categories may overlap.
+    std::cout<<"  "<<label<<" lineage faces="<<part.faces.size()<<" source/candidate/unknown="
+             <<source<<'/'<<candidate<<'/'<<unknown<<" unchanged/modified/generated="
+             <<unchanged<<'/'<<modified<<'/'<<generated<<'\n';
+}
 } // namespace
 
 int main(int argc,char** argv) {
@@ -159,20 +217,34 @@ int main(int argc,char** argv) {
         std::cout<<"ok "<<++checks<<" - "<<name<<'\n';
     };
     try {
-        require(argc==4,"usage: boolean-tests plain pocket corbel");
-        for(int fixture=1;fixture<=3;++fixture) test(std::string("full unchanged pipeline: ")+argv[fixture],[&] {
+        require(argc==6,"usage: boolean-tests plain pocket corbel half-corbel combined-pocket-corbel");
+        for(int fixture=1;fixture<=5;++fixture) test(std::string("full unchanged pipeline: ")+argv[fixture],[&] {
             std::ifstream file(argv[fixture],std::ios::binary); require(file.good(),"fixture readable");
             const std::string text{std::istreambuf_iterator<char>(file),{}};
             const auto parsed=smd::parseSmd10125(text);
             const auto json=smd::toJsonV1(parsed), records=sourceSnapshot(parsed.geometry.brep);
             const auto s=pipeline(parsed.geometry.brep);
+            const auto before=solidSnapshot(s);
             const auto b=buildPrincipalPrismCandidate(s,parsed.geometry.brep);
-            const auto before=solidSnapshot(s), candidateBefore=candidateSnapshot(b);
+            const auto candidateBefore=candidateSnapshot(b);
+            if(fixture>=4) qualifyCandidate(parsed.geometry.brep,b,fixture);
             auto result=decomposeBoolean(s,b);
-            require(result.extensions.size()==(fixture==3?1u:0u),"extension connected-solid count");
-            require(result.reductions.size()==(fixture==2?1u:0u),"reduction connected-solid count");
+            require(result.extensions.size()==(fixture>=3?1u:0u),"extension connected-solid count");
+            require(result.reductions.size()==(fixture==2 || fixture==5?1u:0u),"reduction connected-solid count");
             if(fixture==2) require(std::abs(result.reductions[0].volumeMm3-30000000.0)<=1.0,"independent pocket volume");
             if(fixture==3) require(std::abs(result.extensions[0].volumeMm3-68625000.0)<=1.0,"independent corbel volume");
+            // GEO-02C raw vertex dimensions; independent of OCCT and net V(S)-V(B).
+            if(fixture==4) {
+                const double expected=(250-49.99999999999818)*(500-250)*
+                    (4040.0000000000023-3740.0000000000023);
+                require(std::abs(result.extensions[0].volumeMm3-expected)<=1.0,"independent half-corbel A volume");
+            }
+            if(fixture==5) {
+                const double expectedA=(250-50)*(-250-(-500))*(4040.0000000000023-3740.0000000000023);
+                const double expectedR=(10.000000000549335-(-250))*(110-(-110))*(10000-9255);
+                require(std::abs(result.extensions[0].volumeMm3-expectedA)<=1.0,"independent combined A volume");
+                require(std::abs(result.reductions[0].volumeMm3-expectedR)<=1.0,"independent combined R volume");
+            }
             const auto& v=result.verification;
             require(v.sourceMinusReconstructedSolids==0 && v.reconstructedMinusSourceSolids==0,"both directed residuals empty");
             require(v.sourceFacesCovered==s.boundary.faces.size() && v.reconstructedFacesCovered==result.reconstructed.faces.size(),"both full boundaries covered");
@@ -198,9 +270,16 @@ int main(int argc,char** argv) {
                 require(a.origin==FaceOrigin::Candidate && !a.sourceFaceOrdinal,"coincident candidate faces never relabelled as source");
             require(solidSnapshot(s)==before && candidateSnapshot(b)==candidateBefore,"all input topology, geometry, flags and mappings unchanged");
             require(sourceSnapshot(parsed.geometry.brep)==records && smd::toJsonV1(parsed)==json,"all parser/source evidence preserved");
+            std::cout<<std::setprecision(17)<<"  B support="<<b.supportingFaceOrdinal
+                     <<" min="<<b.minimumLocalMm.x<<','<<b.minimumLocalMm.y<<','<<b.minimumLocalMm.z
+                     <<" max="<<b.maximumLocalMm.x<<','<<b.maximumLocalMm.y<<','<<b.maximumLocalMm.z
+                     <<" dimensions="<<b.dimensionsMm.x<<','<<b.dimensionsMm.y<<','<<b.dimensionsMm.z<<'\n';
             std::cout<<std::setprecision(17)<<"  A="<<(result.extensions.empty()?0:result.extensions[0].volumeMm3)
                      <<" R="<<(result.reductions.empty()?0:result.reductions[0].volumeMm3)
                      <<" boundary="<<v.sourceFacesCovered<<'/'<<v.reconstructedFacesCovered<<" dV="<<v.volumeDifferenceMm3<<'\n';
+            for(const auto& a:result.extensions) reportLineage("A",a);
+            for(const auto& r:result.reductions) reportLineage("R",r);
+            reportLineage("S'",result.reconstructed);
         });
         const auto source=box(); const auto s=pipeline(source); const auto b=buildPrincipalPrismCandidate(s,source);
         test("null candidate fails, identical valid candidate is legitimately empty",[&] {
