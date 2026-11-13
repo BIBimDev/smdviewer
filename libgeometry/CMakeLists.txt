@@ -1,7 +1,23 @@
-find_package(OpenCASCADE 8.0.1 EXACT CONFIG QUIET)
+set(smd_occt_components FoundationClasses ModelingData ModelingAlgorithms)
+if(SMD_BUILD_GEO_VISUALISER)
+    list(APPEND smd_occt_components Visualization)
+endif()
+find_package(OpenCASCADE 8.0.1 EXACT CONFIG QUIET COMPONENTS ${smd_occt_components})
 if(NOT OpenCASCADE_FOUND)
+    if(SMD_BUILD_GEO_VISUALISER)
+        message(FATAL_ERROR "GEO-Visualiser requires visualization-enabled OCCT 8.0.1 exactly (FoundationClasses, ModelingData, ModelingAlgorithms, Visualization). Set OpenCASCADE_DIR to that installation; the headless installation remains supported with SMD_BUILD_GEO_VISUALISER=OFF.")
+    endif()
     message(FATAL_ERROR
         "GEO-01A requires installed OCCT 8.0.1 exactly. Set OpenCASCADE_DIR to the directory containing OpenCASCADEConfig.cmake, or set CMAKE_PREFIX_PATH to its installation prefix.")
+endif()
+if(SMD_BUILD_GEO_VISUALISER)
+    # Imported package targets otherwise have directory scope. The opt-in
+    # desktop sibling uses the same kernel targets and exact version check.
+    foreach(toolkit IN LISTS OpenCASCADE_LIBRARIES)
+        if(TARGET ${toolkit})
+            set_property(TARGET ${toolkit} PROPERTY IMPORTED_GLOBAL TRUE)
+        endif()
+    endforeach()
 endif()
 if(NOT "${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}" STREQUAL "8.0.1"
    OR NOT "${OpenCASCADE_DEVELOPMENT_VERSION}" STREQUAL "")
