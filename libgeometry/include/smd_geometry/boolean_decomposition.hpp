@@ -11,11 +11,11 @@ inline constexpr double booleanToleranceMm = 1e-7;
 inline constexpr double reconstructionVolumeToleranceMm3 = 1.0;
 
 enum class FaceOrigin { Source, Candidate, Unknown };
-enum class FaceChange { Unchanged, Modified, Generated, Removed };
+enum class FaceChange { Unchanged, Modified, Generated, Removed, Unknown };
 struct FaceAncestor {
     FaceOrigin origin = FaceOrigin::Unknown;
     std::optional<std::size_t> sourceFaceOrdinal;
-    FaceChange change = FaceChange::Unchanged;
+    FaceChange change = FaceChange::Unknown;
 };
 struct BooleanFace {
     TopoDS_Face face;

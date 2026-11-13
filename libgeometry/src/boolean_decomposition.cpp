@@ -209,7 +209,7 @@ TrackedShape booleanOp(const TrackedShape& left, const TrackedShape& right, BOPA
             if (op.IsDeleted(f.face)) record(FaceChange::Removed, {});
         }
         for (auto& face : result.faces) if (face.ancestors.empty())
-            face.ancestors.push_back({FaceOrigin::Unknown, {}, FaceChange::Unchanged});
+            face.ancestors.push_back({FaceOrigin::Unknown, {}, FaceChange::Unknown});
         return result;
     } catch (const Standard_Failure& e) { fail(stage, std::string("OCCT exception: ") + e.what()); }
 }
