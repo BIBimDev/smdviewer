@@ -4,7 +4,9 @@ Baseline fetched before editing: `main` and `origin/main` both at
 `6b8eb3ef9210e720095b65f446793e9970c01f6c`. Task branch:
 `codex/geo-02b-validated-solid`. Tracked files were clean; the pre-existing
 untracked `.vscode/` is untouched and excluded. The checkout is LF, including
-the parser oracle sources and fixtures. The PR records the final tested SHA.
+the parser oracle sources and fixtures. The Windows/MSVC and Linux/GCC
+build and test results below are for commit
+`e4e432f1560ae3136f83e4e9545993f3746bca50`.
 
 ## API and boundary
 
@@ -97,22 +99,25 @@ still rejected. Synthetic edge-contact and coplanar-overlap tests exercise this
 distinction. A valid `BRepCheck_Analyzer` result or successful MakeSolid call
 alone is never sufficient.
 
-**Tolerance policy:** all source and returned entity tolerances remain at or
-below the inherited **1e-7 mm** ceiling and must be unchanged. Additional fuzzy
-tolerance is explicitly **zero**. In pinned OCCT 8.0.1, the public
-`SetFuzzyValue(0)` clamps to `Precision::Confusion()`; the private
-`NoFuzzChecker` subclass assigns the protected `myFuzzyValue = 0.0` and the stage
-checks the reported value after execution. There is no fallback, retry at a
-larger tolerance, proximity-based correspondence, or OCCT source patch.
+**Tolerance policy:** input and returned OCCT entity tolerances remain unchanged
+and at or below the inherited **1e-7 mm** ceiling. The top-level checker’s fuzzy
+parameter is set to zero. In pinned OCCT 8.0.1, the public `SetFuzzyValue(0)`
+clamps to `Precision::Confusion()`, so the private `NoFuzzChecker` subclass
+sets the protected `myFuzzyValue = 0.0` directly and checks the reported value
+after execution.
 
-The checker still uses OCCT's intrinsic intersection precision, operand
-tolerances and their combined contact thresholds. Zero additional fuzz does
-not turn OCCT into exact arithmetic, nor does `1e-7 mm` promise one universal
-pairwise contact threshold. Conservative near-contact rejection is permitted;
-the algorithm never responds by inflating source/result tolerances. Empty
-post-treated interferences with no errors/warnings constitutes completion under
-this pinned API; it has no separate `IsDone()` method. This is kernel-based
-numerical validation, not a proof for arbitrary SMD geometry.
+A zero top-level parameter does **not** imply zero effective contact tolerance.
+Several internal predicates, including vertex/vertex, vertex/edge and
+vertex/face checks, still apply a `Precision::Confusion()` floor in combination
+with the operand tolerances. The effective threshold depends on the predicate.
+No extra user-selected fuzz is requested, there is no retry with a larger
+tolerance, and neither source nor returned geometry is altered to make a
+check pass. Conservative near-contact rejection remains possible.
+
+An empty post-treated interference map with no errors or warnings constitutes
+completion under this pinned API, which has no separate `IsDone()` method.
+This is kernel-based numerical validation, not a proof for arbitrary SMD
+geometry.
 
 Pinned implementation references:
 
