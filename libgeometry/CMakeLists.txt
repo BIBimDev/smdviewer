@@ -13,7 +13,7 @@ foreach(toolkit TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo TKTopAlg
     endif()
 endforeach()
 
-add_library(smd-geometry STATIC src/faces.cpp)
+add_library(smd-geometry STATIC src/faces.cpp src/shell.cpp)
 target_include_directories(smd-geometry PUBLIC include)
 target_include_directories(smd-geometry SYSTEM PUBLIC "${OpenCASCADE_INCLUDE_DIR}")
 target_link_libraries(smd-geometry PUBLIC smd TKTopAlgo TKBRep TKMath TKernel)
@@ -26,6 +26,10 @@ else()
 endif()
 
 if(BUILD_TESTING)
+    add_executable(smd-shell-tests tests/shell_tests.cpp)
+    target_link_libraries(smd-shell-tests PRIVATE smd-geometry)
+    add_test(NAME geometry-shell COMMAND smd-shell-tests
+        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd")
     add_executable(smd-geometry-tests tests/faces_tests.cpp)
     target_link_libraries(smd-geometry-tests PRIVATE smd-geometry)
     add_test(NAME geometry-faces COMMAND smd-geometry-tests
