@@ -205,7 +205,8 @@ int main(int argc, char** argv) {
         std::cout << "ok " << ++checks << " - " << name << '\n';
     };
     try {
-        require(argc == 2, "Usage: smd-solid-tests plain_column.smd");
+        require(argc == 6, "Usage: smd-solid-tests plain_column.smd pocket_column.smd "
+                "SingleCorbelColumn.smd SingleHalfCorbelColumn.smd SinglePocketingSingleCorbelColumn.smd");
         std::ifstream file(argv[1], std::ios::binary); require(file.good(), "plain fixture readable");
         const std::string text{std::istreambuf_iterator<char>(file),{}};
         const auto parsed = smd::parseSmd10125(text);
@@ -221,6 +222,54 @@ int main(int argc, char** argv) {
             require(sourceSnapshot(b)==records && smd::toJsonV1(parsed)==json, "all source records and parser output unchanged");
             std::cout << std::setprecision(17) << "  volume mm^3 = " << result.volumeMm3 << '\n';
         });
+        // GEO-02C: independent source-dimension prism references, derived in
+        // docs/GEO-02C.md. No production feature recognition or Boolean operations.
+        struct Fixture {
+            const char* name;
+            int argument, vertices, edges, faces;
+            double volumeMm3;
+        };
+        for (const auto& fixture : {
+                Fixture{"pocket_column.smd", 2, 16, 24, 10, 2895000000.0},
+                Fixture{"SingleCorbelColumn.smd", 3, 16, 24, 10, 3755624999.850474},
+                Fixture{"SingleHalfCorbelColumn.smd", 4, 16, 24, 10, 3192499999.875395},
+                Fixture{"SinglePocketingSingleCorbelColumn.smd", 5, 24, 36, 14, 3134885999.875305}}) {
+            test(fixture.name, [&] {
+                const char* stage = "parser";
+                try {
+                    std::ifstream input(argv[fixture.argument], std::ios::binary);
+                    require(input.good(), "fixture readable");
+                    const std::string contents{std::istreambuf_iterator<char>(input), {}};
+                    require(!input.bad(), "fixture read complete");
+                    const auto specimen = smd::parseSmd10125(contents);
+                    const auto& source = specimen.geometry.brep;
+                    const auto records = sourceSnapshot(source), json = smd::toJsonV1(specimen);
+                    require(source.verticesLocal.size() == static_cast<std::size_t>(fixture.vertices) &&
+                            source.faces.size() == static_cast<std::size_t>(fixture.faces), "source counts");
+                    stage = "GEO-01 faces";
+                    const auto faces = smd_geometry::convertFaces(source);
+                    stage = "GEO-02A shell";
+                    const auto shell = smd_geometry::assembleShell(source, faces);
+                    require(shell.reversedFaceOrdinals.empty(), "zero relative reversals");
+                    stage = "GEO-02B solid / GEO-02C verification";
+                    const auto result = buildAndCheck(source, shell, fixture.volumeMm3, 1.0);
+                    require(!result.globallyReversed && result.boundary.reversedFaceOrdinals.empty(),
+                            "zero global and relative reversals");
+                    ShapeMap vs, es, fs;
+                    TopExp::MapShapes(result.solid, TopAbs_VERTEX, vs);
+                    TopExp::MapShapes(result.solid, TopAbs_EDGE, es);
+                    TopExp::MapShapes(result.solid, TopAbs_FACE, fs);
+                    require(vs.Extent() == fixture.vertices && es.Extent() == fixture.edges &&
+                            fs.Extent() == fixture.faces, "actual solid topology counts");
+                    require(sourceSnapshot(source) == records && smd::toJsonV1(specimen) == json,
+                            "all source records and parser output unchanged through pipeline");
+                    std::cout << std::setprecision(17) << "  volume mm^3 = " << result.volumeMm3
+                              << "; topology = " << vs.Extent() << '/' << es.Extent() << '/' << fs.Extent() << '\n';
+                } catch (const std::exception& e) {
+                    throw std::runtime_error(std::string(stage) + ": " + e.what());
+                }
+            });
+        }
         test("same plain boundary inward: one global reversal, exact final occurrence orientations", [&] {
             auto shell = assemble(b); reverse(shell);
             const auto result = buildAndCheck(b,shell,2925000000.0,1.0);
@@ -281,7 +330,7 @@ int main(int argc, char** argv) {
             rejects([&]{ (void)smd_geometry::buildSolid(shell); },{"[correspondence]","SourceVertex[0]","tolerance"});
             require(snapshot(shell)==before,"inflated tolerance unchanged");
         });
-        std::cout << checks << " GEO-02B checks passed\n";
+        std::cout << checks << " GEO-02B/GEO-02C checks passed\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "After " << checks << " successful checks: " << e.what() << '\n'; return 1;
