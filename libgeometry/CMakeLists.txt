@@ -13,7 +13,7 @@ foreach(toolkit TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo TKTopAlg
     endif()
 endforeach()
 
-add_library(smd-geometry STATIC src/faces.cpp src/shell.cpp src/solid.cpp src/principal_prism.cpp)
+add_library(smd-geometry STATIC src/faces.cpp src/shell.cpp src/solid.cpp src/principal_prism.cpp src/boolean_decomposition.cpp)
 target_include_directories(smd-geometry PUBLIC include)
 target_include_directories(smd-geometry SYSTEM PUBLIC "${OpenCASCADE_INCLUDE_DIR}")
 target_link_libraries(smd-geometry PUBLIC smd TKBO TKPrim TKTopAlgo TKBRep TKMath TKernel)
@@ -26,6 +26,12 @@ else()
 endif()
 
 if(BUILD_TESTING)
+    add_executable(smd-boolean-decomposition-tests tests/boolean_decomposition_tests.cpp)
+    target_link_libraries(smd-boolean-decomposition-tests PRIVATE smd-geometry)
+    add_test(NAME geometry-boolean-decomposition COMMAND smd-boolean-decomposition-tests
+        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd")
     add_executable(smd-principal-prism-tests tests/principal_prism_tests.cpp)
     target_link_libraries(smd-principal-prism-tests PRIVATE smd-geometry)
     add_test(NAME geometry-principal-prism COMMAND smd-principal-prism-tests
