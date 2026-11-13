@@ -12,6 +12,7 @@
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_Wire.hxx>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <functional>
@@ -20,6 +21,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace {
 void require(bool condition, const std::string& message) {
@@ -54,60 +56,118 @@ void check(const smd::ParsedBrep& b, const smd_geometry::FaceConversion& result,
            const std::vector<double>& expectedAreas) {
     require(result.vertices.size() == b.verticesLocal.size(), "source vertex count");
     require(result.faces.size() == b.faces.size(), "source face count");
+    require(expectedAreas.size() == b.faces.size(), "expected area count");
     for (std::size_t v = 0; v < result.vertices.size(); ++v) {
         const auto p = BRep_Tool::Pnt(result.vertices[v]);
         const auto& raw = b.verticesLocal[v];
-        require(p.X() == raw.x && p.Y() == raw.y && p.Z() == raw.z, "exact source coordinates");
+        require(p.X() == raw.x && p.Y() == raw.y && p.Z() == raw.z,
+                "exact coordinates at SourceVertex[" + std::to_string(v) + "]");
         for (std::size_t other = 0; other < v; ++other)
             require(!result.vertices[v].IsSame(result.vertices[other]), "distinct source vertex entities");
     }
     for (std::size_t f = 0; f < result.faces.size(); ++f) {
+        const auto context = " at SourceFace[" + std::to_string(f) + "]";
+        const auto faceRequire = [&](bool condition, const std::string& message) {
+            require(condition, message + context);
+        };
+        const auto faceNear = [&](double actual, double expected, double tolerance, const std::string& message) {
+            near(actual, expected, tolerance, message + context);
+        };
         const auto& face = result.faces[f];
-        require(face.ShapeType() == TopAbs_FACE && BRepCheck_Analyzer(face, true).IsValid(), "valid face");
+        faceRequire(face.ShapeType() == TopAbs_FACE && BRepCheck_Analyzer(face, true).IsValid(), "valid face");
         GProp_GProps props;
         BRepGProp::SurfaceProperties(face, props);
-        near(props.Mass(), expectedAreas[f], 1e-5, "area at source face " + std::to_string(f));
+        faceNear(props.Mass(), expectedAreas[f], 1e-5, "area");
         BRepAdaptor_Surface surface(face);
-        require(surface.GetType() == GeomAbs_Plane, "planar support");
+        faceRequire(surface.GetType() == GeomAbs_Plane, "planar support");
         const auto plane = surface.Plane();
         const auto& originalPlane = *b.faces[f].plane;
         const gp_Dir originalNormal(originalPlane.a, originalPlane.b, originalPlane.c);
-        near(std::abs(plane.Axis().Direction().Dot(originalNormal)), 1, 1e-12, "original plane normal locus");
+        faceNear(std::abs(plane.Axis().Direction().Dot(originalNormal)), 1, 1e-12, "original plane normal locus");
         const double offset = originalPlane.d / std::hypot(originalPlane.a, originalPlane.b, originalPlane.c);
-        near(plane.Distance(gp_Pnt(-offset * originalNormal.X(), -offset * originalNormal.Y(),
+        faceNear(plane.Distance(gp_Pnt(-offset * originalNormal.X(), -offset * originalNormal.Y(),
                                   -offset * originalNormal.Z())), 0, 1e-10, "original supporting plane location");
         const auto wire = BRepTools::OuterWire(face);
-        require(!wire.IsNull() && BRep_Tool::IsClosed(wire), "closed outer wire");
+        faceRequire(!wire.IsNull() && BRep_Tool::IsClosed(wire), "closed outer wire");
         std::size_t wires = 0;
         for (TopoDS_Iterator it(face); it.More(); it.Next()) {
-            require(it.Value().ShapeType() == TopAbs_WIRE, "face only contains wires");
+            faceRequire(it.Value().ShapeType() == TopAbs_WIRE, "face only contains wires");
             ++wires;
         }
-        require(wires == 1, "single wire only");
+        faceRequire(wires == 1, "single wire only");
         std::size_t j = 0;
         gp_Vec polygonNormal;
         const auto& loop = b.faces[f].indices;
+        std::size_t edges = 0;
+        for (TopoDS_Iterator it(wire); it.More(); it.Next()) {
+            faceRequire(it.Value().ShapeType() == TopAbs_EDGE, "wire only contains edges");
+            ++edges;
+        }
+        faceRequire(edges == loop.size(), "full edge count");
         for (BRepTools_WireExplorer it(wire, face); it.More(); it.Next(), ++j) {
-            require(j < loop.size(), "wire length");
-            require(it.CurrentVertex().IsSame(result.vertices[loop[j]]), "ordered source vertex identity");
+            faceRequire(j < loop.size(), "wire length");
+            faceRequire(it.CurrentVertex().IsSame(result.vertices[loop[j]]),
+                        "ordered vertex identity at loop position " + std::to_string(j));
             const auto p = BRep_Tool::Pnt(it.CurrentVertex());
-            near(plane.Distance(p), 0, smd_geometry::distanceToleranceMm, "source plane location");
+            faceNear(plane.Distance(p), 0, smd_geometry::distanceToleranceMm, "source plane location");
             const auto& next = b.verticesLocal[loop[(j + 1) % loop.size()]];
             polygonNormal += gp_Vec(p.X(), p.Y(), p.Z()).Crossed(gp_Vec(next.x, next.y, next.z));
         }
-        require(j == loop.size(), "full ordered boundary");
-        require(polygonNormal.Dot(gp_Vec(plane.Axis().Direction())) > 0, "source winding represented by plane normal");
+        faceRequire(j == loop.size(), "full ordered boundary");
+        faceRequire(polygonNormal.Dot(gp_Vec(plane.Axis().Direction())) > 0, "source winding represented by plane normal");
     }
+}
+
+// Independent planar shoelace calculation from raw source coordinates, without
+// OCCT geometry. Project away the dominant normal axis, then undo area foreshortening.
+double sourcePolygonArea(const smd::ParsedBrep& b, const smd::Face& face) {
+    const auto& plane = *face.plane;
+    const std::array<double, 3> normal{plane.a, plane.b, plane.c};
+    std::size_t drop = 0;
+    for (std::size_t axis = 1; axis < 3; ++axis)
+        if (std::abs(normal[axis]) > std::abs(normal[drop])) drop = axis;
+    const auto u = (drop + 1) % 3, v = (drop + 2) % 3;
+    double twiceArea = 0;
+    for (std::size_t j = 0; j < face.indices.size(); ++j) {
+        const auto& p = b.verticesLocal[face.indices[j]];
+        const auto& q = b.verticesLocal[face.indices[(j + 1) % face.indices.size()]];
+        const std::array<double, 3> a{p.x, p.y, p.z}, c{q.x, q.y, q.z};
+        twiceArea += a[u] * c[v] - c[u] * a[v];
+    }
+    return std::abs(twiceArea) / 2 * std::hypot(plane.a, plane.b, plane.c) / std::abs(normal[drop]);
+}
+
+smd_geometry::FaceConversion checkCorbel(
+    const smd::ParsedSmd& parsed, std::size_t vertices, std::size_t faces,
+    const std::vector<double>& areas,
+    std::initializer_list<std::pair<std::size_t, std::vector<std::size_t>>> concaveLoops) {
+    const auto& source = parsed.geometry.brep;
+    require(source.verticesLocal.size() == vertices && source.faces.size() == faces, "corbel source counts");
+    require(areas.size() == faces, "corbel expected area count");
+    for (const auto& [ordinal, indices] : concaveLoops)
+        require(source.faces.at(ordinal).indices == indices,
+                "pinned eight-edge loop at SourceFace[" + std::to_string(ordinal) + "]");
+    const auto before = smd::toJsonV1(parsed);
+    auto result = smd_geometry::convertFaces(source);
+    for (std::size_t f = 0; f < faces; ++f)
+        near(sourcePolygonArea(source, source.faces[f]), areas[f], 1e-5,
+             "source shoelace area at SourceFace[" + std::to_string(f) + "]");
+    check(source, result, areas);
+    require(smd::toJsonV1(parsed) == before, "all corbel source evidence preserved");
+    return result;
 }
 } // namespace
 
 int main(int argc, char** argv) {
     int checks = 0;
     auto test = [&](const char* name, const std::function<void()>& body) {
-        body(); std::cout << "ok " << ++checks << " - " << name << '\n';
+        try { body(); }
+        catch (const std::exception& e) { throw std::runtime_error(std::string(name) + ": " + e.what()); }
+        std::cout << "ok " << ++checks << " - " << name << '\n';
     };
     try {
-        require(argc == 3, "Usage: smd-geometry-tests plain_column.smd pocket_column.smd");
+        require(argc == 6, "Usage: smd-geometry-tests plain_column.smd pocket_column.smd "
+                "SingleCorbelColumn.smd SingleHalfCorbelColumn.smd SinglePocketingSingleCorbelColumn.smd");
         auto parsed = readFixture(argv[1]);
         auto& b = parsed.geometry.brep;
         test("plain column: six ordered faces, areas, planes, exact shared local vertices", [&] {
@@ -127,6 +187,31 @@ int main(int argc, char** argv) {
             check(source, smd_geometry::convertFaces(source),
                   {427500,487500,4500000,3800000,4500000,3900000,60000,150000,100000,150000});
             require(smd::toJsonV1(pocket) == before, "all pocket source evidence preserved");
+        });
+        test("SingleCorbelColumn.smd: ten faces, concave loops and duplicate-name ordinal correspondence", [&] {
+            const auto corbel = readFixture(argv[3]);
+            const auto& source = corbel.geometry.brep;
+            const auto result = checkCorbel(corbel, 16, 10,
+                {300000,6144999.999750789,7511249.999700948,5214999.999750789,705000,
+                 7511249.999700948,300000,152500,152500,225000},
+                {{2, {1,5,6,7,13,14,10,2}}, {5, {0,3,11,15,12,9,8,4}}});
+            require(source.faces[3].name == "sweepface_1_0_3" && source.faces[4].name == source.faces[3].name,
+                    "source faces 3 and 4 retain the duplicate name");
+            require(!result.faces[3].IsSame(result.faces[4]), "source faces 3 and 4 remain distinct entities");
+        });
+        test("SingleHalfCorbelColumn.smd: ten ordered faces and full concave loops", [&] {
+            checkCorbel(readFixture(argv[4]), 16, 10,
+                {250000,6294999.999750789,6354999.999750789,6354999.999750789,6429999.999750789,
+                 250000,50000,50000,75000,60000},
+                {{1, {1,7,9,8,4,5,6,2}}, {4, {0,11,5,4,13,14,7,1}}});
+        });
+        test("SinglePocketingSingleCorbelColumn.smd: fourteen ordered faces and full concave loops", [&] {
+            checkCorbel(readFixture(argv[5]), 24, 14,
+                {192799.99999987916,6324999.999750789,6161099.999750789,6264999.999750789,
+                 6399999.999750789,250000,57200.000000120854,193700.0000004093,
+                 163900,193700.0000004093,50000,50000,60000,75000},
+                {{0, {0,1,2,3,4,5,6,7}}, {2, {2,9,12,7,6,10,11,3}},
+                 {3, {0,7,12,13,14,16,17,15}}, {4, {0,15,23,20,14,13,8,1}}});
         });
         test("world vertices and recorded transforms never used", [&] {
             auto local = b;
@@ -295,7 +380,7 @@ int main(int argc, char** argv) {
         test("empty face collection rejected", [&] {
             auto s = square(); s.faces.clear(); rejects(s, {"no faces"});
         });
-        std::cout << checks << " GEO-01B checks passed\n";
+        std::cout << checks << " GEO-01C checks passed\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "After " << checks << " successful checks: " << e.what() << '\n'; return 1;
