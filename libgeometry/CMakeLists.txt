@@ -31,7 +31,9 @@ if(BUILD_TESTING)
     add_test(NAME geometry-boolean-decomposition COMMAND smd-boolean-decomposition-tests
         "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
         "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/SingleHalfCorbelColumn.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/SinglePocketingSingleCorbelColumn.smd")
     add_executable(smd-principal-prism-tests tests/principal_prism_tests.cpp)
     target_link_libraries(smd-principal-prism-tests PRIVATE smd-geometry)
     add_test(NAME geometry-principal-prism COMMAND smd-principal-prism-tests
