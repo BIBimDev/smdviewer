@@ -29,7 +29,11 @@ if(BUILD_TESTING)
     add_executable(smd-solid-tests tests/solid_tests.cpp)
     target_link_libraries(smd-solid-tests PRIVATE smd-geometry)
     add_test(NAME geometry-solid COMMAND smd-solid-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/SingleHalfCorbelColumn.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/SinglePocketingSingleCorbelColumn.smd")
     add_executable(smd-shell-tests tests/shell_tests.cpp)
     target_link_libraries(smd-shell-tests PRIVATE smd-geometry)
     add_test(NAME geometry-shell COMMAND smd-shell-tests
