@@ -1,19 +1,24 @@
 #pragma once
 #include "model.hpp"
 #include "view_cube.hpp"
+#include "origin_marker.hpp"
 #include <QWidget>
 #include <AIS_InteractiveContext.hxx>
 #include <AIS_Shape.hxx>
 #include <V3d_View.hxx>
+#include <Bnd_Box.hxx>
 #include <functional>
 
 namespace inspector {
+enum class DisplayStyle { Shaded, Transparent, Wireframe };
 class Viewport : public QWidget {
 public:
     explicit Viewport(QWidget* parent = nullptr);
     ~Viewport() override;
     QPaintEngine* paintEngine() const override { return nullptr; }
-    void showDisplay(const Display* display, int isolated = -1);
+    void showDisplay(const Display* display, int isolated = -1, bool refit = true);
+    void setDisplayStyle(DisplayStyle);
+    void setShowContext(bool);
     void setPickMode(Kind);
     bool select(const std::string& id);
     void fit();
@@ -45,11 +50,17 @@ protected:
     void leaveEvent(QEvent*) override;
     void wheelEvent(QWheelEvent*) override;
 private:
+    friend struct ViewportProbe; // Focused native presentation regressions.
     struct Object { const Component* component; occ::handle<AIS_Shape> ais; };
     void initialize();
-    void populate();
+    void populate(bool refit);
+    void applyStyle(const occ::handle<AIS_Shape>&);
+    void populateContext();
     void activate();
     void backOffPerspectiveEye();
+    Bnd_Box foregroundBounds() const;
+    void frameForeground();
+    void fitDepth();
     void guard(const std::function<void()>&);
     std::string ownerId(const occ::handle<SelectMgr_EntityOwner>&) const;
     int mode() const;
@@ -58,9 +69,15 @@ private:
     const Display* display_ = nullptr;
     int isolated_ = -1;
     Kind kind_ = Kind::Face;
+    DisplayStyle style_ = DisplayStyle::Shaded;
+    bool showContext_ = true;
     occ::handle<AIS_InteractiveContext> context_;
     occ::handle<V3d_View> view_;
     occ::handle<ViewCube> cube_;
+    occ::handle<OriginMarker> origin_;
+    Graphic3d_ZLayerId contextLayer_ = Graphic3d_ZLayerId_UNKNOWN;
+    Graphic3d_ZLayerId contextOverlayLayer_ = Graphic3d_ZLayerId_UNKNOWN;
+    std::vector<occ::handle<AIS_Shape>> contextObjects_;
     std::vector<Object> objects_;
     QPoint press_, previous_;
     QSize nativeSize_;

@@ -11,12 +11,16 @@
 #include <OpenGl_GraphicDriver.hxx>
 #include <Prs3d_Drawer.hxx>
 #include <Prs3d_LineAspect.hxx>
+#include <Prs3d_IsoAspect.hxx>
 #include <SelectMgr_Selection.hxx>
 #include <SelectMgr_SensitiveEntity.hxx>
 #include <Select3D_SensitiveEntity.hxx>
 #include <StdSelect_BRepOwner.hxx>
 #include <Standard_Failure.hxx>
 #include <V3d_Viewer.hxx>
+#include <Graphic3d_ZLayerSettings.hxx>
+#include <Graphic3d_TransformPers.hxx>
+#include <Precision.hxx>
 #ifdef _WIN32
 #include <WNT_Window.hxx>
 #else
@@ -58,11 +62,25 @@ void Viewport::initialize() {
     occ::handle<V3d_Viewer> viewer = new V3d_Viewer(driver);
     viewer->SetDefaultLights();
     viewer->SetLightOn();
+    Graphic3d_ZLayerSettings contextSettings;
+    contextSettings.SetName("Partial-body context outlines");
+    contextSettings.SetClearDepth(false);
+    contextSettings.SetEnableDepthWrite(false);
+    contextSettings.SetRenderInDepthPrepass(false);
+    if(!viewer->InsertLayerBefore(contextLayer_,contextSettings,Graphic3d_ZLayerId_Default))
+        throw std::runtime_error("Cannot create contextual outline layer");
+    contextSettings.SetName("Partial-body faint overlay outlines");
+    contextSettings.SetEnableDepthTest(false);
+    if(!viewer->InsertLayerAfter(contextOverlayLayer_,contextSettings,Graphic3d_ZLayerId_Default))
+        throw std::runtime_error("Cannot create contextual overlay layer");
     context_ = new AIS_InteractiveContext(viewer);
     context_->SetAutoActivateSelection(false);
     context_->HighlightStyle(Prs3d_TypeOfHighlight_LocalSelected)->SetColor(Quantity_NOC_YELLOW);
     context_->HighlightStyle(Prs3d_TypeOfHighlight_Selected)->SetColor(Quantity_NOC_YELLOW);
     view_ = viewer->CreateView();
+    // OCCT's automatic ZFit includes infinite decorations in its graphical box.
+    // Model depth uses foreground geometry; retain the existing cube separately.
+    view_->SetAutoZFitMode(false);
 #ifdef _WIN32
     occ::handle<WNT_Window> window = new WNT_Window(reinterpret_cast<Aspect_Handle>(winId()));
 #else
@@ -74,41 +92,96 @@ void Viewport::initialize() {
     view_->MustBeResized();
     cube_ = new ViewCube();
     cube_->setPixelRatio(devicePixelRatioF());
-    populate();
+    origin_ = new OriginMarker();
+    origin_->setPixelRatio(devicePixelRatioF());
+    populate(true);
 }
 int Viewport::mode() const {
     return AIS_Shape::SelectionMode(kind_ == Kind::Vertex ? TopAbs_VERTEX : kind_ == Kind::Edge ? TopAbs_EDGE :
                                    kind_ == Kind::Face ? TopAbs_FACE : TopAbs_SOLID);
 }
-void Viewport::populate() {
+void Viewport::applyStyle(const occ::handle<AIS_Shape>& ais) {
+    context_->SetDisplayMode(ais,style_==DisplayStyle::Wireframe?AIS_WireFrame:AIS_Shaded,false);
+    context_->SetTransparency(ais,style_==DisplayStyle::Transparent?0.72:0.0,false);
+}
+void Viewport::setDisplayStyle(DisplayStyle style) {
+    style_=style;
+    guard([&] {
+        for(const auto& object:objects_) applyStyle(object.ais);
+        redraw();
+    });
+}
+void Viewport::populateContext() {
+    for(const auto& ais:contextObjects_) context_->Remove(ais,false);
+    contextObjects_.clear();
+    if(!showContext_ || !display_) return;
+    for(const auto& outline:display_->context) {
+        occ::handle<AIS_Shape> ais=new AIS_Shape(outline.shape);
+        const Quantity_Color color=outline.representation==Representation::Reductions?
+            Quantity_Color(0.28,0.21,0.24,Quantity_TOC_RGB):Quantity_Color(0.24,0.27,0.31,Quantity_TOC_RGB);
+        ais->SetColor(color);
+        ais->Attributes()->SetWireAspect(new Prs3d_LineAspect(color,Aspect_TOL_DASH,1));
+        ais->Attributes()->SetUnFreeBoundaryAspect(new Prs3d_LineAspect(color,Aspect_TOL_DASH,1));
+        ais->Attributes()->SetFreeBoundaryAspect(new Prs3d_LineAspect(color,Aspect_TOL_DASH,1));
+        ais->Attributes()->SetIsoOnPlane(false);
+        ais->Attributes()->UIsoAspect()->SetNumber(0);
+        ais->Attributes()->VIsoAspect()->SetNumber(0);
+        ais->SetInfiniteState(true); // Defensive exclusion from scene framing.
+        ais->SetDisplayMode(AIS_WireFrame);
+        ais->SetAutoHilight(false);
+        // B/A need outlines through their opaque foreground to reveal contained
+        // reductions. In R, keep context behind the pocket's filled foreground.
+        ais->SetZLayer(display_->representation==Representation::Reductions?contextLayer_:contextOverlayLayer_);
+        // Never Load or Activate: context has no selectable owner or UI mapping.
+        context_->Display(ais,AIS_WireFrame,-1,false);
+        contextObjects_.push_back(ais);
+    }
+}
+void Viewport::setShowContext(bool show) {
+    showContext_=show;
+    guard([&] { if(!context_.IsNull()) { populateContext(); redraw(); } });
+}
+void Viewport::populate(bool refit) {
     if(context_.IsNull()) return;
     context_->RemoveAll(false); // Removal also removes hidden selection owners.
     objects_.clear();
+    contextObjects_.clear();
     if(display_) for(std::size_t i=0; i<display_->components.size(); ++i) {
         if(isolated_ >= 0 && i != static_cast<std::size_t>(isolated_)) continue;
         const auto& c = display_->components[i];
         occ::handle<AIS_Shape> ais = new AIS_Shape(c.display);
-        ais->SetColor(display_->representation == Representation::Reductions ? Quantity_Color(0.90,0.40,0.30,Quantity_TOC_RGB) :
-                      display_->representation == Representation::Extensions ? Quantity_Color(0.35,0.75,0.45,Quantity_TOC_RGB) :
+        ais->SetColor(display_->representation == Representation::Reductions ? Quantity_Color(0.72,0.52,0.53,Quantity_TOC_RGB) :
+                      display_->representation == Representation::Extensions ? Quantity_Color(0.32,0.34,0.36,Quantity_TOC_RGB) :
+                      display_->representation == Representation::Candidate ? Quantity_Color(0.57,0.59,0.61,Quantity_TOC_RGB) :
                       Quantity_Color(0.60,0.72,0.85,Quantity_TOC_RGB));
         ais->Attributes()->SetFaceBoundaryDraw(true);
         ais->Attributes()->SetFaceBoundaryAspect(new Prs3d_LineAspect(Quantity_NOC_BLACK, Aspect_TOL_SOLID, 1.0));
+        ais->Attributes()->SetIsoOnPlane(false);
+        ais->Attributes()->UIsoAspect()->SetNumber(0);
+        ais->Attributes()->VIsoAspect()->SetNumber(0);
+        ais->Attributes()->SetWireAspect(new Prs3d_LineAspect(Quantity_NOC_GRAY80,Aspect_TOL_SOLID,1));
+        ais->Attributes()->SetUnFreeBoundaryAspect(new Prs3d_LineAspect(Quantity_NOC_GRAY80,Aspect_TOL_SOLID,1));
+        ais->Attributes()->SetFreeBoundaryAspect(new Prs3d_LineAspect(Quantity_NOC_GRAY80,Aspect_TOL_SOLID,1));
         context_->Display(ais, AIS_Shaded, -1, false);
+        applyStyle(ais);
         // Display(...,-1) deliberately skips registration with the selector.
         // Load is required before activating topological selection modes.
         context_->Load(ais,-1);
         objects_.push_back({&c,ais});
     }
+    populateContext();
+    context_->Display(origin_,0,-1,false);
     context_->Display(cube_,0,0,false);
     context_->Activate(cube_,0);
     activate();
-    fit();
+    if(refit) fit();
+    else fitDepth();
     view_->Redraw();
 }
-void Viewport::showDisplay(const Display* display, int isolated) {
+void Viewport::showDisplay(const Display* display, int isolated, bool refit) {
     display_ = display;
     isolated_ = isolated;
-    guard([&] { populate(); });
+    guard([&] { populate(refit); });
 }
 void Viewport::activate() {
     if(context_.IsNull()) return;
@@ -206,7 +279,7 @@ void Viewport::toggleProjection() {
                                               Graphic3d_Camera::Projection_Perspective);
         camera->SetScale(scale); // OCCT adjusts perspective eye distance about the same target.
         if(perspective()) backOffPerspectiveEye();
-        view_->ZFitAll();
+        fitDepth();
         redraw();
         if(projectionChanged) projectionChanged();
     });
@@ -214,8 +287,7 @@ void Viewport::toggleProjection() {
 void Viewport::backOffPerspectiveEye() {
     // Only displayed model copies participate: no cube, hidden component or
     // selected-only bounds. Geometry bounds do not use/alter triangulation.
-    Bnd_Box bounds;
-    for(const auto& object:objects_) BRepBndLib::AddOptimal(object.component->display,bounds,false,false);
+    const auto bounds=foregroundBounds();
     if(bounds.IsVoid()) return;
     const auto min=bounds.CornerMin(),max=bounds.CornerMax();
     const auto& camera=view_->Camera();
@@ -245,7 +317,7 @@ void Viewport::orient(V3d_TypeOfOrientation direction) {
         camera->SetDirection(-V3d::GetProjAxis(direction));
         camera->SetUp(direction==V3d_Zpos?gp::DY():direction==V3d_Zneg?-gp::DY():gp::DZ());
         camera->OrthogonalizeUp();
-        view_->ZFitAll();
+        fitDepth();
         redraw();
     });
 }
@@ -259,7 +331,35 @@ std::optional<V3d_TypeOfOrientation> Viewport::cubeDirectionAt(int x,int y) {
     return {};
 }
 void Viewport::fit() {
-    guard([&] { if(!view_.IsNull() && !objects_.empty()) { view_->FitAll(0.06,false); view_->ZFitAll(); view_->Redraw(); } });
+    guard([&] { if(!view_.IsNull() && !objects_.empty()) { frameForeground(); fitDepth(); view_->Redraw(); } });
+}
+void Viewport::frameForeground() {
+    // V3d_View::FitAll also expands for zoom-persistent presentations even when
+    // given explicit bounds. Fit the camera directly to exclude the marker.
+    const auto& camera=view_->Camera();
+    if(camera->FitMinMax(foregroundBounds(),10*Precision::Confusion(),true))
+        camera->SetScale(camera->Scale()*1.06); // Existing native Fit margin.
+}
+Bnd_Box Viewport::foregroundBounds() const {
+    Bnd_Box bounds;
+    for(const auto& object:objects_) BRepBndLib::AddOptimal(object.component->display,bounds,false,false);
+    return bounds;
+}
+void Viewport::fitDepth() {
+    if(view_.IsNull()) return;
+    const auto bounds=foregroundBounds();
+    Bnd_Box graphical=bounds;
+    // Retain the existing cube's graphical depth range, without letting it enter
+    // framing or eye-clearance bounds. New context/origin never enter either box.
+    if(!cube_.IsNull()) {
+        Bnd_Box cubeBounds;
+        cube_->BoundingBox(cubeBounds);
+        int width=0,height=0;view_->Window()->Size(width,height);
+        const auto& camera=view_->Camera();
+        cube_->TransformPersistence()->Apply(camera,camera->ProjectionMatrix(),camera->OrientationMatrix(),width,height,cubeBounds);
+        graphical.Add(cubeBounds);
+    }
+    if(!graphical.IsVoid()) view_->Camera()->ZFitAll(1.0,bounds,graphical);
 }
 void Viewport::redraw() {
     if(view_.IsNull()) return;
@@ -272,11 +372,14 @@ void Viewport::redraw() {
         if(!cube_.IsNull() && std::abs(cube_->Size()-84*devicePixelRatioF())>0.01) {
             cube_->setPixelRatio(devicePixelRatioF());
             context_->Redisplay(cube_,false);
+            origin_->setPixelRatio(devicePixelRatioF());
+            context_->Redisplay(origin_,false);
         }
         nativeSize_=size;
         view_->MustBeResized();
-        if(!objects_.empty()) {view_->FitAll(0.06,false);view_->ZFitAll();}
+        if(!objects_.empty()) frameForeground();
     }
+    fitDepth();
     view_->Redraw();
 }
 bool Viewport::capture(const std::string& filename) {
@@ -320,7 +423,7 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
     guard([&] {
         if(view_.IsNull() || cubePressed_) return;
         if(e->buttons() & Qt::LeftButton) { if(dragged_) { view_->Rotation(p.x(),p.y()); redraw(); } }
-        else if(e->buttons() & (Qt::MiddleButton | Qt::RightButton)) view_->Pan(p.x()-previous_.x(),previous_.y()-p.y());
+        else if(e->buttons() & (Qt::MiddleButton | Qt::RightButton)) { view_->Pan(p.x()-previous_.x(),previous_.y()-p.y()); redraw(); }
         else {
             const auto cubeDirection=cubeDirectionAt(p.x(),p.y());
             if(cubeArea(p.x(),p.y()) && !cubeDirection) context_->ClearDetected(false);

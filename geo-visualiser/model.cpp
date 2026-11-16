@@ -170,7 +170,7 @@ void sourceFace(std::ostream& out, const smd::ParsedBrep& b, std::size_t ordinal
 }
 }
 Display prepareDisplay(const Document& d, Representation r) {
-    Display result{r, {}};
+    Display result{r, {}, {}};
     if(r == Representation::Faces) for(std::size_t i=0; i<d.converted.faces.size(); ++i)
         result.components.push_back(copyComponent(d,r,i,d.converted.faces[i],nullptr));
     else if(r == Representation::Solid) result.components.push_back(copyComponent(d,r,0,d.source.solid,nullptr));
@@ -178,6 +178,14 @@ Display prepareDisplay(const Document& d, Representation r) {
     else {
         const auto& bodies = r == Representation::Extensions ? d.decomposition.extensions : d.decomposition.reductions;
         for(std::size_t i=0; i<bodies.size(); ++i) result.components.push_back(copyComponent(d,r,i,bodies[i].solid,&bodies[i]));
+    }
+    if(r == Representation::Candidate || r == Representation::Extensions || r == Representation::Reductions) {
+        const auto outline = [&](Representation other, const TopoDS_Shape& shape) {
+            if(other != r) result.context.push_back({other,BRepBuilderAPI_Copy(shape,true,false).Shape()});
+        };
+        outline(Representation::Candidate,d.candidate.solid);
+        for(const auto& body:d.decomposition.extensions) outline(Representation::Extensions,body.solid);
+        for(const auto& body:d.decomposition.reductions) outline(Representation::Reductions,body.solid);
     }
     return result;
 }

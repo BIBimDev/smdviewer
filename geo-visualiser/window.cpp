@@ -11,6 +11,7 @@
 #include <QKeyEvent>
 #include <QStatusBar>
 #include <QTextEdit>
+#include <QCheckBox>
 #include <Standard_Failure.hxx>
 #include <sstream>
 #include <iomanip>
@@ -50,6 +51,18 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     pick_->setCurrentIndex(2);
     auto* fit = new QPushButton("Fit");
     controls->addWidget(fit);
+    auto* presentationControls = new QHBoxLayout;
+    layout->addLayout(presentationControls);
+    presentationControls->addWidget(new QLabel("Display style"));
+    auto* style = new QComboBox;
+    style->setObjectName("displayStyle");
+    style->addItems({"Shaded","Transparent","Wireframe"});
+    presentationControls->addWidget(style);
+    auto* context = new QCheckBox("Show context");
+    context->setObjectName("showContext");
+    context->setChecked(true);
+    presentationControls->addWidget(context);
+    presentationControls->addStretch();
     status_ = new QLabel("Loading original fixture...");
     status_->setObjectName("status");
     status_->setWordWrap(true);
@@ -81,6 +94,8 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     sidebarLayout->addLayout(tagLayout);
     split->addWidget(sidebar);
     viewport_ = new Viewport;
+    connect(style,&QComboBox::currentIndexChanged,this,[this](int i) { viewport_->setDisplayStyle(static_cast<DisplayStyle>(i)); });
+    connect(context,&QCheckBox::toggled,this,[this](bool show) { viewport_->setShowContext(show); });
     split->addWidget(viewport_);
     split->setSizes({440,960});
     layout->addWidget(new QLabel("Raw source-local mm | P: projection | Cube: direction | Left drag: orbit | Right/middle drag: pan | Wheel: zoom | Click: pick | Tags last for this run"));
@@ -140,6 +155,7 @@ void Window::fail(const std::string& message) {
     viewport_->hide();
     document_.reset();
     display_.components.clear();
+    display_.context.clear();
     items_.clear();
     { QSignalBlocker block(tree_); tree_->clear(); }
     selected_.clear();
@@ -159,7 +175,7 @@ void Window::open() {
 }
 bool Window::load(const std::filesystem::path& file) {
     std::shared_ptr<const Document> pending;
-    Display prepared{Representation::Solid,{}};
+    Display prepared{Representation::Solid,{}, {}};
     try {
         pending = loadDocument(file); // Always reread and rerun the full pipeline.
         try { prepared = prepareDisplay(*pending,Representation::Solid); }
@@ -238,7 +254,9 @@ void Window::showComponents() {
         if(display_.components.empty()) new QTreeWidgetItem(tree_,{"Empty group — no components"});
         tree_->resizeColumnToContents(0);
     }
-    viewport_->showDisplay(&display_,isolated);
+    // Representation/isolation changes preserve the comparison camera. Successful
+    // Open explicitly resets/Fits; the Fit button frames only foreground copies.
+    viewport_->showDisplay(&display_,isolated,false);
     details(nullptr);
     std::ostringstream out;
     out << std::setprecision(17) << name(display_.representation) << " | " << display_.components.size() << " component(s)";

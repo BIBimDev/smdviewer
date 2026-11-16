@@ -42,6 +42,9 @@ struct Component {
 struct Display {
     Representation representation;
     std::vector<Component> components;
+    // Presentation-only private copies. No entities, IDs or source mappings.
+    struct Outline { Representation representation; TopoDS_Shape shape; };
+    std::vector<Outline> context;
 };
 // No meshing of original shapes. Copy history establishes identity, never proximity.
 Display prepareDisplay(const Document&, Representation);

@@ -1,5 +1,6 @@
 #include "model.hpp"
 #include "camera_tests.hpp"
+#include "display_tests.hpp"
 #include <QKeyEvent>
 #include "viewport.hpp"
 #include "window.hpp"
@@ -15,6 +16,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QProcess>
+#include <QCheckBox>
 #include <fstream>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
@@ -400,6 +402,34 @@ void uiChecks(const std::filesystem::path& samples) {
             "new process starts without saved tags: "+restarted.readAllStandardError().toStdString());
     require(openFile(samples/fixtures[1]).isEmpty(),"open combined");reset();
     selectFace();tags->setText("camera tag");save->click();
+    auto* style=window.findChild<QComboBox*>("displayStyle");
+    auto* context=window.findChild<QCheckBox*>("showContext");
+    require(style && context && style->currentIndex()==0 && context->isChecked(),"Shaded and context are defaults");
+    const auto retainedId=viewport->selectedId();
+    const auto retainedCamera=viewport->camera();
+    const auto retainedRow=tree->currentItem();
+    const auto retainedDetails=details->toPlainText();
+    for(int i:{1,2,0}) {
+        style->setCurrentIndex(i);
+        require(viewport->selectedId()==retainedId && tree->currentItem()==retainedRow &&
+                tree->currentItem()->text(1)=="camera tag" && tags->text()=="camera tag" &&
+                details->toPlainText()==retainedDetails && pickMode->currentIndex()==2 &&
+                sameCamera(retainedCamera,viewport->camera()),"style control preserves face/tree/tag/details/camera/pick mode");
+    }
+    for(int i:{2,3,4}) {
+        const auto before=viewport->camera();reps->setCurrentIndex(i);
+        require(sameCamera(before,viewport->camera()),"B to A to R controls preserve camera/projection");
+        selectFace();tags->setText("context tag");save->click();
+        const auto id=viewport->selectedId();auto* row=tree->currentItem();
+        const auto beforeToggle=viewport->camera();const int roots=tree->topLevelItemCount();
+        for(bool show:{false,true}) {
+            context->setChecked(show);
+            require(viewport->selectedId()==id && tree->currentItem()==row && row->text(1)=="context tag" &&
+                    tags->text()=="context tag" && tree->topLevelItemCount()==roots &&
+                    sameCamera(beforeToggle,viewport->camera()),"context control preserves owner/tree/tag/framing");
+        }
+    }
+    reps->setCurrentIndex(1);selectFace();tags->setText("camera tag");save->click();
     const auto cameraSelection=viewport->selectedId();
     auto* cameraRow=tree->currentItem();
     const auto cameraDetails=details->toPlainText();
@@ -478,8 +508,8 @@ void uiChecks(const std::filesystem::path& samples) {
 }
 int main(int argc,char** argv) {
     try {
-        require(argc==2 || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--fresh-window" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera")),
-                "usage: smd-inspector-tests <samples> [--render|--open|--camera|--fresh-window]");
+        require(argc==2 || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--fresh-window" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera" || std::string(argv[2])=="--display")),
+                "usage: smd-inspector-tests <samples> [--render|--open|--camera|--display|--fresh-window]");
         const std::filesystem::path samples=argv[1];
         if(argc==3 && std::string(argv[2])=="--open") {
             QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -508,11 +538,23 @@ int main(int argc,char** argv) {
             uiChecks(samples);
             return 0;
         }
+        if(argc==3 && std::string(argv[2])=="--display") {
+            for(const auto fixture:fixtures) {
+                const auto document=loadDocument(samples/fixture);
+                const auto before=snapshot(*document);
+                displayMappingChecks(*document);
+                displayRenderChecks(*viewport,*document);
+                require(snapshot(*document)==before,"evidence preserved through display regression suite");
+            }
+            uiChecks(samples);
+            return 0;
+        }
         std::set<std::string> allIds;
         Tags tags;
         for(std::size_t fixture=0;fixture<2;++fixture) {
             const auto d=loadDocument(samples/fixtures[fixture]);
             const auto before=snapshot(*d);
+            displayMappingChecks(*d);
             require(d->converted.faces.size()==(fixture==0?6u:14u),"converted face counts");
             require(d->candidate.supportingFaceOrdinal==(fixture==0?1u:5u),"candidate support reference");
             const auto& a=d->decomposition.extensions;const auto& r=d->decomposition.reductions;
@@ -584,6 +626,10 @@ int main(int argc,char** argv) {
                 if(rendering) {if(fixture==1 && representation==Representation::Solid) cameraRenderChecks(*viewport,display);render(*viewport,display);require(snapshot(*d)==before,"evidence preserved through AIS rendering and picking");}
             }
             require(tags.get(first(prepareDisplay(*d,Representation::Solid),Kind::Face).id)=="test tag","tag survives display recreation");
+            if(rendering) {
+                displayRenderChecks(*viewport,*d);
+                require(snapshot(*d)==before,"evidence preserved through styles, context and origin render checks");
+            }
             auto bad=d->parsed;bad.geometry.brep.faces[0].indices.clear();
             std::shared_ptr<const Document> partial;
             rejects([&] {partial=buildDocument("bad",bad);},"convertFaces");require(!partial,"failed pipeline cannot publish partial result");
