@@ -121,11 +121,11 @@ void rejects(const std::function<void()>& action, const std::string& expected) {
     }
     throw std::runtime_error("expected rejection: "+expected);
 }
-const Entity& first(const Display& d, Kind kind) {
+const Entity& first(const inspector::Display& d, Kind kind) {
     for(const auto& c:d.components) for(const auto& e:c.entities) if(e.kind==kind) return e;
     throw std::runtime_error("entity absent");
 }
-void navigation(Viewport& viewport,const Display& display) {
+void navigation(Viewport& viewport,const inspector::Display& display) {
     if(display.components.empty()) return;
     const auto point=BRep_Tool::Pnt(TopoDS::Vertex(first(display,Kind::Vertex).display));
     const auto mouse=[&](QEvent::Type type,QPointF p,Qt::MouseButton button,Qt::MouseButtons buttons) {
@@ -148,7 +148,7 @@ void navigation(Viewport& viewport,const Display& display) {
     before=viewport.project(point);viewport.fit();
     require(viewport.project(point)!=before,"fit changes camera projection");
 }
-void render(Viewport& viewport, Display& display) {
+void render(Viewport& viewport, inspector::Display& display) {
     viewport.showDisplay(&display);
     QApplication::processEvents();
     require(viewport.error().empty(),viewport.error());
