@@ -5,6 +5,11 @@
 #include <QEvent>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
+#include <BRep_Tool.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
+#include <limits>
 #include <filesystem>
 #include <algorithm>
 #include <V3d.hxx>
@@ -37,6 +42,69 @@ void direction(inspector::Viewport& v,int i) {
     const auto projected=gp_Vec(up)-gp_Vec(c->Direction())*up.Dot(c->Direction());
     check(c->Up().IsEqual(gp_Dir(projected),1e-10),"predictable screen up, including top/bottom");
 }
+void endProjectionChecks(inspector::Viewport& v,const inspector::Display& display) {
+    std::vector<gp_Pnt> vertices;
+    double zmin=std::numeric_limits<double>::max(),zmax=std::numeric_limits<double>::lowest();
+    for(const auto& component:display.components)
+        for(TopExp_Explorer it(component.display,TopAbs_VERTEX);it.More();it.Next()) {
+            const auto p=BRep_Tool::Pnt(TopoDS::Vertex(it.Current()));
+            vertices.push_back(p);zmin=std::min(zmin,p.Z());zmax=std::max(zmax,p.Z());
+        }
+    for(const auto orientation:{V3d_Zpos,V3d_Zneg}) {
+        const bool top=orientation==V3d_Zpos;
+        const double endZ=top?zmax:zmin;
+        const inspector::Entity* endFace=nullptr;
+        gp_Pnt interior;
+        // Find an interior point of an actual end face, including a concave end.
+        // Test point/plane tolerance: 1e-7 mm; never modify the display geometry.
+        for(const auto& component:display.components) for(const auto& e:component.entities) {
+            if(e.kind!=inspector::Kind::Face) continue;
+            bool atEnd=true;
+            double xmin=std::numeric_limits<double>::max(),ymin=xmin;
+            double xmax=std::numeric_limits<double>::lowest(),ymax=xmax;
+            for(TopExp_Explorer it(e.display,TopAbs_VERTEX);it.More();it.Next()) {
+                const auto p=BRep_Tool::Pnt(TopoDS::Vertex(it.Current()));
+                atEnd=atEnd && std::abs(p.Z()-endZ)<1e-7;
+                xmin=std::min(xmin,p.X());xmax=std::max(xmax,p.X());
+                ymin=std::min(ymin,p.Y());ymax=std::max(ymax,p.Y());
+            }
+            if(!atEnd) continue;
+            for(double x:{0.25,0.5,0.75}) for(double y:{0.25,0.5,0.75}) {
+                const gp_Pnt p(xmin+x*(xmax-xmin),ymin+y*(ymax-ymin),endZ);
+                if(BRepClass_FaceClassifier(TopoDS::Face(e.display),p,1e-7).State()==TopAbs_IN) {endFace=&e;interior=p;}
+            }
+        }
+        check(endFace!=nullptr,"combined column has a supported end face");
+        v.resetCamera();v.orient(orientation);v.fit();
+        check(v.select(endFace->id),"end face selected before Top/Bottom Fit P");
+        const auto before=v.camera();
+        const auto oldCallback=v.selectionChanged;
+        int notifications=0;v.selectionChanged=[&](const std::string&) {++notifications;};
+        v.toggleProjection();
+        const auto after=v.camera();
+        double minDepth=std::numeric_limits<double>::max();
+        for(const auto& p:vertices) minDepth=std::min(minDepth,gp_Vec(after->Eye(),p).Dot(gp_Vec(after->Direction())));
+        std::cout<<(top?"Top":"Bottom")<<" Fit P: scale "<<before->Scale()<<" -> "<<after->Scale()
+                 <<", eye distance "<<before->Distance()<<" -> "<<after->Distance()<<", nearest geometry depth "<<minDepth<<std::endl;
+        check(minDepth>0 && minDepth>after->ZNear(),"Perspective eye and near plane stay in front of the combined column");
+        check(after->IsOrthographic()==false && after->Scale()>before->Scale(),"unsafe end-view scale backs off in Perspective");
+        check(before->Direction().IsEqual(after->Direction(),1e-12) && before->Up().IsEqual(after->Up(),1e-12) &&
+              before->Center().Distance(after->Center())<1e-8,"end-view backoff preserves direction/up/target");
+        check(v.selectedId()==endFace->id && notifications==0,"end-view backoff preserves selection without notification");
+        const auto pixel=v.project(interior);
+        check(pixel.x()>0 && pixel.x()<qRound(v.width()*v.devicePixelRatioF()) && pixel.y()>0 && pixel.y()<qRound(v.height()*v.devicePixelRatioF()),"end-face interior projects inside viewport");
+        for(TopExp_Explorer it(endFace->display,TopAbs_VERTEX);it.More();it.Next()) {
+            const auto p=v.project(BRep_Tool::Pnt(TopoDS::Vertex(it.Current())));
+            check(p.x()>0 && p.x()<qRound(v.width()*v.devicePixelRatioF()) && p.y()>0 && p.y()<qRound(v.height()*v.devicePixelRatioF()),"entire end-face boundary remains inside viewport");
+        }
+        const auto image=std::filesystem::temp_directory_path()/(top?"geo-vis-camera-top-fit-perspective.png":"geo-vis-camera-bottom-fit-perspective.png");
+        check(v.capture(image.string()),"Top/Bottom Fit P framebuffer");
+        check(v.pick(pixel.x(),pixel.y())==endFace->id,"actual Perspective end face stays visible and pickable");
+        v.selectionChanged=oldCallback;
+    }
+    std::cout<<"PASS — combined Top/Bottom Fit P eye clearance and rendered end faces\n";
+}
+
 }
 void cameraMappingChecks() {
     std::set<std::array<int,3>> directions;
@@ -187,6 +255,8 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
     // Picking outside the control still follows normal model/background selection.
     v.pick(0,0);check(v.selectedId().empty() && selections==1,"normal background picking outside cube");
     v.selectionChanged=callback;
+    endProjectionChecks(v,display);
+    v.resetCamera();
     v.showDisplay(nullptr);
     check(v.error().empty(),"camera viewport error");
     std::cout<<"PASS — real cube clicks: all 26 directions from 54 tiles in both projections; camera/selection isolation\n";

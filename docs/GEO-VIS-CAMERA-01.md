@@ -15,11 +15,13 @@ browser change, tag-identity change, or Ctrl-click/source-metadata work is inclu
 - **P** switches Orthographic/Perspective once per key press. Auto-repeat is
   consumed. Text editors and modal dialogs retain normal text input. The status
   bar reports the actual camera mode as **O · Orthographic** or **P · Perspective**.
-- Switching projection preserves direction, up, target and scale at the target
-  plane. OCCT adjusts perspective eye distance using its existing 45° vertical
-  field of view. It does not Fit or change model selection, tree row or tags.
-  Objects at other depths naturally change apparent size in Perspective; Fit
-  remains available if the perspective silhouette extends beyond the viewport.
+- Switching projection preserves direction, up and target, and normally scale at
+  the target plane. OCCT adjusts perspective eye distance using its existing 45°
+  vertical field of view. If that scale places the eye inside/behind the displayed
+  bounds, the eye retreats enough to frame those bounds from in front. This safety
+  exception enlarges the target-plane scale; switching back to Orthographic then
+  retains that enlarged scale. It does not call Fit or change selection/tree/tags.
+  Objects at other depths naturally change apparent size in Perspective.
 - Startup and every successful Open use fitted Orthographic/default isometric S.
   Cancel and failed opens retain the previous camera, projection and active state.
 - The lower-left cube has nine tiles per face. A centre tile chooses one axis,
@@ -114,3 +116,32 @@ The tracked `tsconfig.tsbuildinfo` was restored byte-for-byte after the attempt.
 
 Review items: local cube presentation/hit policy, principal screen-up convention,
 and outstanding platform checks. This ends at GEO-VIS-CAMERA-01.
+
+## End-view eye clearance follow-up — 2026-11-16
+
+Starting clean at `60b9f1cf15eefaff41626bf329c5f2bf2513c388` on the same topic
+branch, added regressions for combined-column Top → Fit → P and Bottom → Fit → P.
+The original Top regression failed: scale 795 mm placed the Perspective eye at
+959.65 mm from the target, 5365.35 mm behind the nearest model geometry.
+
+The native viewport now checks a conservative axis-aligned box of only the
+currently displayed model copies. No cube, hidden component, source shape,
+selection-only bounds or triangulation participates. Camera-only clearance is
+`max(0.001 mm, 1e-6 × box diagonal)`; qualified kernel tolerances are unchanged.
+If the nominal eye is already in front of the box by that clearance, the original
+scale-preserving switch remains unchanged. Otherwise only the eye distance
+increases, retaining orientation, up, target and selected owner. Retreat is the
+larger of front-plane clearance and the distance needed to contain the bounds
+within the existing frustum with the native Fit convention's 6% framing margin.
+No Fit call or target recentering occurs during the switch.
+
+For each end, the regression finds an actual end-face interior point, selects
+that face, performs Orthographic end view → Fit → Perspective, and verifies
+positive eye-to-geometry depth beyond the near plane for all displayed vertices,
+retained camera direction/up/target/selection, a projected end-face boundary
+inside the viewport, framebuffer capture, and picking of the same end face.
+The existing ordinary-view target-plane pixel-scale and O/P/O checks remain.
+Captures: `/tmp/geo-vis-camera-top-fit-perspective.png` and
+`/tmp/geo-vis-camera-bottom-fit-perspective.png`. Follow-up test SHA and outcomes
+are recorded in its delivery report. Prior human acceptance above predates this
+follow-up; Windows and remote-desktop verification remain pending.

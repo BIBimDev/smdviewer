@@ -49,6 +49,7 @@ private:
     void initialize();
     void populate();
     void activate();
+    void backOffPerspectiveEye();
     void guard(const std::function<void()>&);
     std::string ownerId(const occ::handle<SelectMgr_EntityOwner>&) const;
     int mode() const;

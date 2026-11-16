@@ -4,6 +4,8 @@
 #include <QWheelEvent>
 #include <QImage>
 #include <V3d.hxx>
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
 #include <Image_PixMap.hxx>
 #include <Aspect_DisplayConnection.hxx>
 #include <OpenGl_GraphicDriver.hxx>
@@ -21,6 +23,8 @@
 #include <Xw_Window.hxx>
 #endif
 #include <cmath>
+#include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 namespace inspector {
@@ -201,10 +205,37 @@ void Viewport::toggleProjection() {
         camera->SetProjectionType(perspective()?Graphic3d_Camera::Projection_Orthographic:
                                               Graphic3d_Camera::Projection_Perspective);
         camera->SetScale(scale); // OCCT adjusts perspective eye distance about the same target.
+        if(perspective()) backOffPerspectiveEye();
         view_->ZFitAll();
         redraw();
         if(projectionChanged) projectionChanged();
     });
+}
+void Viewport::backOffPerspectiveEye() {
+    // Only displayed model copies participate: no cube, hidden component or
+    // selected-only bounds. Geometry bounds do not use/alter triangulation.
+    Bnd_Box bounds;
+    for(const auto& object:objects_) BRepBndLib::AddOptimal(object.component->display,bounds,false,false);
+    if(bounds.IsVoid()) return;
+    const auto min=bounds.CornerMin(),max=bounds.CornerMax();
+    const auto& camera=view_->Camera();
+    const gp_Vec forward(camera->Direction()),up(camera->OrthogonalizedUp());
+    const gp_Vec right=forward.Crossed(up);
+    const auto unitFrustum=camera->ViewDimensions(1.0);
+    double nearest=std::numeric_limits<double>::lowest(),framedDistance=0;
+    for(double x:{min.X(),max.X()}) for(double y:{min.Y(),max.Y()}) for(double z:{min.Z(),max.Z()}) {
+        const gp_Vec offset(camera->Center(),gp_Pnt(x,y,z));
+        const double towardEye=-offset.Dot(forward);
+        nearest=std::max(nearest,towardEye);
+        const double lateral=std::max(2*std::abs(offset.Dot(right))/unitFrustum.X(),
+                                      2*std::abs(offset.Dot(up))/unitFrustum.Y());
+        framedDistance=std::max(framedDistance,towardEye+1.06*lateral);
+    }
+    // Camera-only numerical clearance in source-local mm, independent of kernel
+    // modelling tolerances. Ordinary safe views retain the exact requested scale.
+    const double clearance=std::max(0.001,min.Distance(max)*1e-6);
+    if(camera->Distance()<=nearest+clearance)
+        camera->SetDistance(std::max(nearest+clearance,framedDistance));
 }
 void Viewport::orient(V3d_TypeOfOrientation direction) {
     guard([&] {
