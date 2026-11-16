@@ -16,6 +16,7 @@ public:
     void setPickMode(Kind);
     bool select(const std::string& id);
     void fit();
+    void resetCamera();
     bool ready() const { return !view_.IsNull(); }
     const std::string& error() const { return error_; }
     std::string selectedId() const;

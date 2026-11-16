@@ -1,4 +1,7 @@
-# GEO-Visualiser — first native inspection milestone
+# GEO-Visualiser — native inspection
+
+Current file-open/reset behaviour and Kubuntu handoff: [GEO-VIS-OPEN-01](GEO-VIS-OPEN-01.md).
+The build and acceptance records below describe the original draft unless dated otherwise.
 
 ## Scope and baseline
 
@@ -27,18 +30,19 @@ changes the caller's environment. Keep the configured dependency installations
 available. MSVC's x64 runtime must also be available (present on the tested
 Build Tools machine); a portable installer/runtime deployment is not delivered.
 
-The Specimen dropdown contains exactly:
+Use **Open SMD…** to open one existing `.smd` file. The adjacent label shows
+the active filename; its tooltip shows the full path. The dialog starts in the
+checkout's `public/samples` directory every time and allows navigation elsewhere.
+The directory is captured as an absolute source checkout path by CMake;
+reconfigure after moving the checkout. The original combined filename is
+`SinglePocketingSingleCorbelColumn.smd` (no space before `.smd`).
 
-| Label | Original repository file |
-| --- | --- |
-| Plain column | `public/samples/plain_column.smd` |
-| Combined pocket/corbel column | `public/samples/SinglePocketingSingleCorbelColumn.smd` |
-
-The fixture directory is captured as an **absolute source checkout path by
-CMake** in a generated header. Original files are read directly, not copied or
-embedded. The combined filename contains no space before `.smd`. Reconfigure
-after moving the checkout; missing files produce a visible diagnostic and no
-results. There is no File Open or general import facility.
+Each open rereads the file and runs the full native pipeline. Only after the
+pipeline and initial S display data are ready does the new document replace the
+old one. Success resets S / All / Face, default camera orientation fitted to S,
+selection, metadata and the active tag editor. Cancel changes nothing. A failed
+read, parse, geometry stage (including unsupported B), or display preparation
+reports the attempted path and stage while retaining the previous document/view.
 
 The initial view is plain-column **validated solid S**. Choose Converted faces,
 S, B, A or R with Representation; only that representation is displayed.
@@ -53,12 +57,13 @@ positive body displaying missing material. There is no reconstructed S' view.
   Body applies to solid representations; the converted face collection has no
   selectable body. Selecting an entity in the tree sets its corresponding mode.
 - A click and a tree selection share one selected AIS owner, highlighted yellow.
-  Changing representation, specimen, isolation or pick mode clears selection.
+  Changing representation, file, isolation or pick mode clears selection.
   Removed components are also removed from the OCCT selector.
 - Metadata shows raw source-local millimetres and zero-based source ordinals.
   No B-rep, element or project placement is applied, and no shape is recentered.
 - Select an entity, enter a tag and press Add / rename (or Enter); Remove deletes
-  it. Tags survive specimen switches in the same window/run. Restart clears
+  it. Tags survive reopening the same canonical file path with identical bytes
+  in the same window/run. Other paths and changed bytes have separate tags. Restart clears
   them. They are not source names, source identities or geometry edits.
 
 ## Evidence and display architecture
@@ -86,8 +91,8 @@ Identity is deliberately separated:
 | S edge | The established shared edge, source endpoint ordinals, and both source loop uses |
 | B support | Candidate-level supporting source face only; no per-face source identity inferred |
 | A/R face lineage | Every recorded Boolean ancestor with source/candidate/unknown origin and unchanged/modified/generated/removed/unknown classification |
-| Viewer ID | `specimen/representation/component/kind/entity`, zero-based local indices; session scope, not durable source identity |
-| User tag | Session-only string keyed by viewer ID, stored separately from geometry and lineage |
+| Viewer ID | `document-digest/representation/component/kind/entity`, zero-based local indices; session scope, not durable source identity |
+| User tag | Session-only string keyed by viewer ID; document digest covers canonical path, a NUL separator and exact file bytes using SHA-256; stored separately from geometry and lineage |
 
 Known source face names, flags, ordered loops, plane coefficients and the B-rep
 token identity remain accessible in metadata. Source-origin Boolean ancestors
@@ -273,13 +278,13 @@ display scaling, graphics driver, branch/commit, and pass/fail notes:
 3. Switch to Converted faces, isolate a face, and exercise vertex/edge/face
    selection. Confirm that other faces cannot intercept picks. Body selection
    must not pretend this collection is a solid.
-4. Switch specimens and representations. Confirm plain A/R are empty; combined
+4. Open the two files and switch representations. Confirm plain A/R are empty; combined
    A and R each contain one isolatable body and show their separate volumes.
    Inspect their face ancestor lists. R must be described as missing material.
 5. Add a tag on an S face; a coincident B face must have no such tag. Switch
-   specimens and back: the S tag remains. Rename/remove it. Add another tag,
+   files and back: the S tag remains. Rename/remove it. Add another tag,
    close the application, restart, and confirm it is gone.
-6. Confirm selection clears on representation/specimen/isolation changes,
+6. Confirm selection clears on representation/file/isolation changes,
    and test the same interactions at the normal remote display scaling.
 
 A build, captured framebuffer, programmatic hit-test or local-desktop smoke

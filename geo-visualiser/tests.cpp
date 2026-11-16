@@ -8,6 +8,12 @@
 #include <QScreen>
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QTemporaryDir>
+#include <QTimer>
+#include <QProcess>
+#include <fstream>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepGProp.hxx>
@@ -31,6 +37,7 @@
 
 namespace {
 using namespace inspector;
+constexpr const char* fixtures[] = {"plain_column.smd", "SinglePocketingSingleCorbelColumn.smd"};
 using ShapeMap = NCollection_IndexedMap<TopoDS_Shape,TopTools_ShapeMapHasher>;
 void require(bool value, const std::string& why) { if(!value) throw std::runtime_error(why); }
 void flags(std::ostream& out, const TopoDS_Shape& s) {
@@ -226,22 +233,130 @@ void render(Viewport& viewport, inspector::Display& display) {
     require(viewport.selectedId().empty(),"representation change clears selection");
     require(viewport.pick(0,0).empty(),"removed representation cannot intercept pick");
 }
+// All copies/edits are temporary; original specimens are never changed.
+struct Copies {
+    QTemporaryDir directory;
+    std::filesystem::path first, second, bad;
+    explicit Copies(const std::filesystem::path& samples) {
+        require(directory.isValid(),"temporary directory");
+        const auto root=std::filesystem::path(directory.path().toStdU16String());
+        first=root/std::filesystem::path(u"outside space ü 柱")/std::filesystem::path(u"same name ü 柱.smd");
+        second=root/"other"/std::filesystem::path(u"same name ü 柱.smd");
+        bad=root/"unsupported input.smd";
+        std::filesystem::create_directories(first.parent_path());
+        std::filesystem::create_directories(second.parent_path());
+        std::filesystem::copy_file(samples/fixtures[0],first);
+        std::filesystem::copy_file(samples/fixtures[0],second);
+        std::ofstream(bad)<<"unsupported input";
+    }
+    void change() const { std::ofstream(first,std::ios::app)<<"\n \n"; }
+};
+void documentChecks(const std::filesystem::path& samples) {
+    Copies copies(samples);
+    Tags tags;
+    const auto a=loadDocument(copies.first), again=loadDocument(copies.first), b=loadDocument(copies.second);
+    require(a!=again && !a->source.solid.IsSame(again->source.solid),"same-file open builds a new pipeline");
+    const auto id=[&](const Document& d) {return first(prepareDisplay(d,Representation::Solid),Kind::Face).id;};
+    tags.set(id(*a),"saved");
+    require(tags.get(id(*again))=="saved","unchanged canonical path/content retains tags");
+    require(tags.get(id(*b)).empty(),"same basename and identical bytes at another path cannot inherit tags");
+    copies.change();
+    const auto changed=loadDocument(copies.first);
+    require(changed->identity!=a->identity && tags.get(id(*changed)).empty(),"changed bytes at same path cannot inherit tags");
+    require(Tags{}.get(id(*a)).empty(),"fresh session drops tags");
+    rejects([&] {loadDocument(copies.bad);},pathText(copies.bad)+": parseSmd10125:");
+    rejects([&] {loadDocument(copies.bad.parent_path()/"missing.smd");},"missing.smd: read:");
+    // Synthetic triangular prism: valid S, but no supported rectangular B.
+    auto parsed=a->parsed;
+    auto& brep=parsed.geometry.brep;
+    brep={};
+    brep.verticesLocal={{0,0,0},{10,0,0},{0,10,0},{0,0,20},{10,0,20},{0,10,20}};
+    for(auto loop:std::vector<std::vector<std::size_t>>{{2,1,0},{3,4,5},{0,1,4,3},{1,2,5,4},{2,0,3,5}}) {
+        const auto p=brep.verticesLocal[loop[0]],q=brep.verticesLocal[loop[1]],r=brep.verticesLocal[loop[2]];
+        const auto n=gp_Vec(q.x-p.x,q.y-p.y,q.z-p.z).Crossed(gp_Vec(r.x-p.x,r.y-p.y,r.z-p.z)).Normalized();
+        brep.faces.push_back({0,loop,smd::Plane{n.X(),n.Y(),n.Z(),-(n.X()*p.x+n.Y()*p.y+n.Z()*p.z)},"synthetic"});
+    }
+    const auto converted=smd_geometry::convertFaces(brep);
+    const auto solid=smd_geometry::buildSolid(smd_geometry::assembleShell(brep,converted));
+    require(!solid.solid.IsNull(),"synthetic input passes S validation");
+    rejects([&] {buildDocument("unsupported-B",parsed);},"buildPrincipalPrismCandidate:");
+}
 void uiChecks(const std::filesystem::path& samples) {
+    Copies copies(samples);
     Window window(samples);window.show();QApplication::processEvents();
-    auto* specimensBox=window.findChild<QComboBox*>("specimen");
+    auto* open=window.findChild<QPushButton*>("openSmd");
+    auto* filename=window.findChild<QLabel*>("filename");
     auto* reps=window.findChild<QComboBox*>("representation");
+    auto* component=window.findChild<QComboBox*>("component");
     auto* tree=window.findChild<QTreeWidget*>("entities");
     auto* tags=window.findChild<QLineEdit*>("tag");
+    auto* details=window.findChild<QPlainTextEdit*>("details");
+    auto* status=window.findChild<QLabel*>("status");
     auto* save=window.findChild<QPushButton*>("saveTag");
     auto* remove=window.findChild<QPushButton*>("removeTag");
     auto* pickMode=window.findChild<QComboBox*>("pick");
     Viewport* viewport=nullptr;
     for(auto* child:window.findChildren<QWidget*>()) if(auto* candidate=dynamic_cast<Viewport*>(child)) viewport=candidate;
-    require(viewport!=nullptr,"UI viewport exists");
-    require(specimensBox->count()==2 && reps->currentIndex()==1,"exact specimen menu; initial S");
-    window.screen()->grabWindow(window.winId()).save(QString::fromStdString((std::filesystem::temp_directory_path()/"geo-visualiser-desktop.png").string()));
+    require(viewport && open && filename,"file controls and viewport exist");
+    require(!window.findChild<QComboBox*>("specimen") && reps->currentIndex()==1 && filename->text()==fixtures[0],"Open replaces dropdown; initial plain S");
+    // Drive the actual Qt modal dialog; its reset directory is checked on EVERY open.
+    const auto openFile=[&](const std::filesystem::path& file, bool cancel=false) {
+        bool handled=false;
+        std::string error;
+        QString diagnostic;
+        QTimer driver;
+        driver.setInterval(25);
+        QObject::connect(&driver,&QTimer::timeout,[&] {
+            if(auto* dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget()); dialog && !handled) {
+                handled=true;
+                if(std::filesystem::path(dialog->directory().absolutePath().toStdU16String())!=samples) {
+                    error="dialog must start in checkout public/samples";dialog->reject();return;
+                }
+                if(cancel) {dialog->reject();return;}
+                dialog->setDirectory(QString::fromStdU16String(file.parent_path().u16string()));
+                dialog->findChild<QLineEdit*>("fileNameEdit")->setText(QString::fromStdU16String(file.u16string()));
+                QMetaObject::invokeMethod(dialog,"accept",Qt::DirectConnection);
+            } else if(dialog) {
+                // Directory changes can reset the filename while its model loads.
+                dialog->findChild<QLineEdit*>("fileNameEdit")->setText(QString::fromStdU16String(file.u16string()));
+                QMetaObject::invokeMethod(dialog,"accept",Qt::DirectConnection);
+            } else if(auto* message=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+                diagnostic=message->text();message->accept();
+            }
+        });
+        QTimer deadline;
+        deadline.setSingleShot(true);
+        QObject::connect(&deadline,&QTimer::timeout,[&] {
+            error="file dialog timed out: "+pathText(file);
+            if(auto* dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())) {
+                error+=" directory="+dialog->directory().absolutePath().toStdString()+" selected="+dialog->selectedFiles().join("|").toStdString();
+                dialog->grab().save("/tmp/geo-vis-open-dialog-timeout.png");
+            }
+            if(auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget())) dialog->reject();
+        });
+        deadline.start(10000);
+        driver.start();open->click();driver.stop();QApplication::processEvents();
+        require(handled && error.empty(),error.empty()?"file dialog exercised":error);
+        return diagnostic;
+    };
+    const auto selectFace=[&] {
+        for(QTreeWidgetItemIterator it(tree);*it;++it) if((*it)->data(0,Qt::UserRole).toString().contains("/Face/")) {tree->setCurrentItem(*it);return;}
+        throw std::runtime_error("UI face absent");
+    };
+    const auto camera=[&] {
+        std::vector<QPoint> result;
+        for(const auto p:{gp_Pnt(-375,-325,-1000),gp_Pnt(375,325,5000),gp_Pnt(0,0,0)}) result.push_back(viewport->project(p));
+        return result;
+    };
+    const auto initialCamera=camera();
+    const auto reset=[&] {
+        require(reps->currentIndex()==1 && component->currentIndex()==0 && pickMode->currentIndex()==2,"successful open resets S/All/Face");
+        require(!tree->currentItem() && tree->selectedItems().empty() && viewport->selectedId().empty(),"successful open clears tree and viewport owner");
+        require(tags->text().isEmpty() && !tags->isEnabled() && !details->toPlainText().contains("Viewer ID"),"successful open clears details and active tag editor");
+        require(viewport->error().empty(),viewport->error());
+    };
     // Check the actual Window callbacks in both directions for every mode.
-    const auto document=loadDocument(0,samples);
+    const auto document=loadDocument(samples/fixtures[0]);
     const auto display=prepareDisplay(*document,Representation::Solid);
     for(auto kind:{Kind::Vertex,Kind::Edge,Kind::Face,Kind::Body}) {
         const auto& e=first(display,kind);
@@ -260,37 +375,92 @@ void uiChecks(const std::filesystem::path& samples) {
         }
         require(picked,"UI pick detected for each mode");
     }
-    const auto selectFace=[&] {
-        for(QTreeWidgetItemIterator it(tree);*it;++it) if((*it)->data(0,Qt::UserRole).toString().contains("/Face/")) {tree->setCurrentItem(*it);return;}
-        throw std::runtime_error("UI face absent");
+    selectFace();tags->setText("restart probe");save->click();
+    QProcess restarted;
+    restarted.start(QCoreApplication::applicationFilePath(),{QString::fromStdU16String(samples.u16string()),"--fresh-window"});
+    const bool restartedFinished=restarted.waitForFinished(15000);
+    require(restartedFinished && restarted.exitStatus()==QProcess::NormalExit && restarted.exitCode()==0,
+            "new process starts without saved tags: "+restarted.readAllStandardError().toStdString());
+    require(openFile(samples/fixtures[1]).isEmpty(),"open combined");reset();
+    reps->setCurrentIndex(4);component->setCurrentIndex(1);selectFace();
+    tags->setText("saved R tag");save->click();tags->setText("unsaved editor text");
+    auto reduction=prepareDisplay(*loadDocument(samples/fixtures[1]),Representation::Reductions);
+    navigation(*viewport,reduction);
+    const auto previousCamera=camera();
+    const auto selected=viewport->selectedId();
+    const auto previousDetails=details->toPlainText(), previousStatus=status->text();
+    const auto retained=[&] {
+        require(reps->currentIndex()==4 && component->currentIndex()==1 && pickMode->currentIndex()==2,"failed/cancelled open retains controls");
+        require(viewport->selectedId()==selected && tree->currentItem() && tree->currentItem()->text(1)=="saved R tag","failed/cancelled open retains selected owner and saved tag");
+        require(tags->text()=="unsaved editor text" && details->toPlainText()==previousDetails && status->text()==previousStatus && camera()==previousCamera,"failed/cancelled open retains editor, details, status and camera");
+        require(filename->text()==fixtures[1],"failed/cancelled open retains active filename");
     };
+    openFile({},true);retained();
+    const auto diagnostic=openFile(copies.bad);retained();
+    require(diagnostic.contains(QString::fromStdU16String(copies.bad.u16string())) && diagnostic.contains("parseSmd10125"),"failed attempt identifies full path and stage");
+    require(openFile(samples/fixtures[0]).isEmpty(),"combined to plain");reset();
+    require(camera()==initialCamera,"plain open resets default orientation and fits new S");
+    for(int representation:{3,4}) {
+        reps->setCurrentIndex(representation);
+        require(status->text().contains("0 component(s)") && status->text().contains("empty") && component->count()==1,"plain A/R are empty after combined load");
+        require(!viewport->select(selected),"old R pick owner removed");
+    }
+    require(openFile(copies.first).isEmpty(),"outside copy with spaces/non-ASCII path");reset();
+    require(filename->text()==QString::fromStdU16String(copies.first.filename().u16string()),"active Unicode filename label");
     selectFace();tags->setText("source-face-tag");save->click();
     reps->setCurrentIndex(2);selectFace();require(tags->text().isEmpty(),"S tag cannot leak onto coincident B face");
-    specimensBox->setCurrentIndex(1);specimensBox->setCurrentIndex(0);reps->setCurrentIndex(1);selectFace();
-    require(tags->text()=="source-face-tag","tag survives specimen switches");
+    navigation(*viewport,display);
+    pickMode->setCurrentIndex(1);
+    require(openFile(copies.first).isEmpty(),"same-file reopen");reset();
+    require(camera()==initialCamera,"same-file reopen resets camera");
+    selectFace();require(tags->text()=="source-face-tag","same unchanged file retains saved tag");
     tags->setText("renamed");save->click();require(tree->currentItem()->text(1)=="renamed","tag rename");
     remove->click();require(tags->text().isEmpty() && tree->currentItem()->text(1).isEmpty(),"tag removal");
     tags->setText("expires");save->click();
+    require(openFile(copies.second).isEmpty(),"same basename other directory");reset();
+    selectFace();require(tags->text().isEmpty(),"same basename tags isolated in UI");
+    require(openFile(copies.first).isEmpty(),"reopen first copy");selectFace();require(tags->text()=="expires","first file tags retained");
+    copies.change();
+    require(openFile(copies.first).isEmpty(),"changed content same path");reset();
+    selectFace();require(tags->text().isEmpty(),"changed file tags isolated in UI");
     Window fresh(samples);fresh.show();QApplication::processEvents();
     auto* freshTree=fresh.findChild<QTreeWidget*>("entities");
     for(QTreeWidgetItemIterator it(freshTree);*it;++it) require((*it)->text(1).isEmpty(),"fresh window has no persisted tags");
     Window missing(samples/"missing-inspector-fixtures");missing.show();QApplication::processEvents();
-    require(missing.findChild<QTreeWidget*>("entities")->topLevelItemCount()==0,"failure exposes no results");
-    require(missing.findChild<QLabel*>("status")->text().contains("Cannot read original fixture"),"visible missing-fixture diagnostic");
+    require(missing.findChild<QTreeWidget*>("entities")->topLevelItemCount()==0,"startup failure exposes no results");
+    require(missing.findChild<QLabel*>("status")->text().contains("read:"),"visible missing-fixture stage diagnostic");
+    window.screen()->grabWindow(window.winId()).save(QString::fromStdString((std::filesystem::temp_directory_path()/"geo-visualiser-desktop.png").string()));
+    std::cout<<"PASS — Qt dialog, document reset, failure/cancel preservation and tag isolation\n";
 }
 }
 int main(int argc,char** argv) {
     try {
-        require(argc==2 || (argc==3 && std::string(argv[2])=="--render"),"usage: smd-inspector-tests <samples> [--render]");
+        require(argc==2 || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--fresh-window" || std::string(argv[2])=="--open")),
+                "usage: smd-inspector-tests <samples> [--render|--open|--fresh-window]");
         const std::filesystem::path samples=argv[1];
+        if(argc==3 && std::string(argv[2])=="--open") {
+            QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+            QApplication application(argc,argv);
+            uiChecks(samples);
+            return 0;
+        }
+        if(argc==3 && std::string(argv[2])=="--fresh-window") {
+            QApplication application(argc,argv);
+            Window fresh(samples);fresh.show();QApplication::processEvents();
+            require(fresh.findChild<QLabel*>("filename")->text()==fixtures[0],"restart loads plain file");
+            auto* tree=fresh.findChild<QTreeWidget*>("entities");
+            require(tree->topLevelItemCount()==1,"restart has S");
+            for(QTreeWidgetItemIterator it(tree);*it;++it) require((*it)->text(1).isEmpty(),"restart has no saved tags");
+            return 0;
+        }
         const bool rendering=argc==3;
         std::unique_ptr<QApplication> application;
         std::unique_ptr<Viewport> viewport;
-        if(rendering) {application=std::make_unique<QApplication>(argc,argv);viewport=std::make_unique<Viewport>();viewport->resize(900,800);viewport->show();QApplication::processEvents();require(viewport->ready() && viewport->error().empty(),"viewport initialization: "+viewport->error());}
+        if(rendering) {QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);application=std::make_unique<QApplication>(argc,argv);viewport=std::make_unique<Viewport>();viewport->resize(900,800);viewport->show();QApplication::processEvents();require(viewport->ready() && viewport->error().empty(),"viewport initialization: "+viewport->error());}
         std::set<std::string> allIds;
         Tags tags;
         for(std::size_t fixture=0;fixture<2;++fixture) {
-            const auto d=loadDocument(fixture,samples);
+            const auto d=loadDocument(samples/fixtures[fixture]);
             const auto before=snapshot(*d);
             require(d->converted.faces.size()==(fixture==0?6u:14u),"converted face counts");
             require(d->candidate.supportingFaceOrdinal==(fixture==0?1u:5u),"candidate support reference");
@@ -378,10 +548,10 @@ int main(int argc,char** argv) {
                 for(const auto& c:display.components) for(const auto& e:c.entities) if(e.original.IsSame(ledger.decomposition.extensions[0].faces[0].face)) retained=e.ancestors.size()==ancestors.size();
                 require(retained,"synthetic multi-contributor ledger retained without invented identities");
             }
-            std::cout << specimens[fixture].key << ": adapter and preservation passed" << (rendering?" including actual AIS rendering/picking":"") << '\n';
+            std::cout << fixtures[fixture] << ": adapter and preservation passed" << (rendering?" including actual AIS rendering/picking":"") << '\n';
         }
-        rejects([&] {loadDocument(0,samples/"missing-inspector-fixtures");},"Cannot read original fixture");
-        rejects([&] {loadDocument(2,samples);},"Unknown specimen");
+        rejects([&] {loadDocument(samples/"missing-inspector-fixtures");},"read:");
+        documentChecks(samples);
         require(Tags{}.get("plain/S/0/Face/0").empty(),"new session has no tags");
         if(rendering) uiChecks(samples);
         std::cout << "PASS — " << (rendering?"automated desktop test; remote-desktop operator verification remains separate":"adapter test; rendering not exercised") << '\n';

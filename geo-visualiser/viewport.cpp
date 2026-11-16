@@ -162,6 +162,14 @@ std::string Viewport::pick(int x, int y) {
     if(selectionChanged) selectionChanged(id);
     return id;
 }
+void Viewport::resetCamera() {
+    guard([&] {
+        if(view_.IsNull()) return;
+        view_->Reset(false);
+        view_->SetProj(V3d_XposYnegZpos);
+        fit();
+    });
+}
 void Viewport::fit() {
     guard([&] { if(!view_.IsNull() && !objects_.empty()) { view_->FitAll(0.06,false); view_->ZFitAll(); view_->Redraw(); } });
 }

@@ -12,7 +12,7 @@ elseif(NOT WIN32)
 endif()
 
 add_library(smd-inspector-adapter STATIC model.cpp)
-target_link_libraries(smd-inspector-adapter PUBLIC smd-geometry)
+target_link_libraries(smd-inspector-adapter PUBLIC smd-geometry PRIVATE Qt6::Core)
 target_include_directories(smd-inspector-adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(smd-inspector-adapter PUBLIC cxx_std_20)
 
@@ -23,7 +23,7 @@ if(UNIX)
 endif()
 add_executable(geo-visualiser main.cpp)
 target_link_libraries(geo-visualiser PRIVATE smd-inspector-desktop)
-# Resolve the two original fixtures from the checkout, independent of cwd.
+# Resolve the initial fixture and dialog directory independently of cwd.
 configure_file(fixtures.hpp.in generated/fixtures.hpp @ONLY)
 target_include_directories(geo-visualiser PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if(WIN32)

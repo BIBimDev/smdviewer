@@ -5,6 +5,8 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QTimer>
+#include <QFileDialog>
+#include <QMessageBox>
 #include <Standard_Failure.hxx>
 #include <sstream>
 #include <iomanip>
@@ -27,8 +29,13 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
         controls->addWidget(result);
         return result;
     };
-    specimen_ = combo("Specimen", "specimen");
-    for(const auto& s : specimens) specimen_->addItem(s.label);
+    auto* openButton = new QPushButton("Open SMD…");
+    openButton->setObjectName("openSmd");
+    controls->addWidget(openButton);
+    filename_ = new QLabel;
+    filename_->setObjectName("filename");
+    filename_->setTextFormat(Qt::PlainText);
+    controls->addWidget(filename_);
     representation_ = combo("Representation", "representation");
     for(auto r : {Representation::Faces,Representation::Solid,Representation::Candidate,Representation::Extensions,Representation::Reductions})
         representation_->addItem(name(r));
@@ -73,7 +80,7 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     split->addWidget(viewport_);
     split->setSizes({440,960});
     layout->addWidget(new QLabel("Raw source-local mm | Left drag: orbit | Right/middle drag: pan | Wheel: zoom | Click: pick | Tags last for this run"));
-    connect(specimen_,&QComboBox::currentIndexChanged,this,[&](int i) { load(i); });
+    connect(openButton,&QPushButton::clicked,this,[&] { open(); });
     connect(representation_,&QComboBox::currentIndexChanged,this,[&] { representation(); });
     connect(component_,&QComboBox::currentIndexChanged,this,[&] { showComponents(); });
     connect(pick_,&QComboBox::currentIndexChanged,this,[&](int i) {
@@ -90,7 +97,7 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     viewport_->selectionChanged = [&](const std::string& id) { select(id,true); };
     // Defer clearing data until the viewport's current OCCT callback has returned.
     viewport_->failed = [&](const std::string& message) { QTimer::singleShot(0,this,[this,message] { fail(message); }); };
-    QTimer::singleShot(0,this,[this] { load(0); });
+    QTimer::singleShot(0,this,[this] { load(samples_ / "plain_column.smd"); });
 }
 Window::~Window() {
     // Release OCCT/GL while the parent's native window is still alive and
@@ -111,14 +118,53 @@ void Window::fail(const std::string& message) {
     status_->setText(QString::fromStdString("Unavailable: " + message));
     details_->setPlainText("No validated results exposed. Check the fixture/dependency paths and restart after correcting the error.");
 }
-void Window::load(int index) {
-    viewport_->showDisplay(nullptr);
-    document_.reset();
+void Window::open() {
+    // A fresh explicit directory on every invocation overrides Qt's last-used path.
+    QFileDialog dialog(this, "Open SMD", QString::fromStdU16String(samples_.u16string()), "SMD files (*.smd)");
+    dialog.setObjectName("openSmdDialog");
+    dialog.setFileMode(QFileDialog::ExistingFile);
+    dialog.setAcceptMode(QFileDialog::AcceptOpen);
+    if(dialog.exec() != QDialog::Accepted) return;
+    const auto files = dialog.selectedFiles();
+    if(!files.isEmpty()) load(std::filesystem::path(files.front().toStdU16String()));
+}
+bool Window::load(const std::filesystem::path& file) {
+    std::shared_ptr<const Document> pending;
+    Display prepared{Representation::Solid,{}};
     try {
-        if(!cache_.at(index)) cache_[index] = loadDocument(index,samples_);
-        document_ = cache_[index];
-        representation();
-    } catch(const std::exception& e) { fail(e.what()); }
+        pending = loadDocument(file); // Always reread and rerun the full pipeline.
+        try { prepared = prepareDisplay(*pending,Representation::Solid); }
+        catch(const Standard_Failure& e) { throw std::runtime_error(pathText(file) + ": prepareDisplay: " + e.what()); }
+        catch(const std::exception& e) { throw std::runtime_error(pathText(file) + ": prepareDisplay: " + e.what()); }
+    } catch(const std::exception& e) {
+        // Keep every active document/view/editor field intact on load failure.
+        if(document_) {
+            QMessageBox warning(QMessageBox::Warning,"Open SMD failed",QString::fromUtf8(e.what()),QMessageBox::Ok,this);
+            warning.setTextFormat(Qt::PlainText);
+            warning.exec();
+        } else fail(e.what());
+        return false;
+    }
+    // Remove the old AIS objects and pick owners before releasing their mappings.
+    viewport_->showDisplay(nullptr);
+    document_ = std::move(pending);
+    display_ = std::move(prepared);
+    {
+        QSignalBlocker representationBlock(representation_), componentBlock(component_), pickBlock(pick_);
+        representation_->setCurrentIndex(static_cast<int>(Representation::Solid));
+        component_->clear(); component_->addItem("All");
+        for(const auto& c : display_.components) component_->addItem(QString::fromStdString(c.label));
+        component_->setCurrentIndex(0);
+        component_->setEnabled(!display_.components.empty());
+        pick_->setCurrentIndex(static_cast<int>(Kind::Face));
+    }
+    filename_->setText(QString::fromStdU16String(file.filename().u16string()));
+    filename_->setToolTip(QString::fromStdU16String(file.u16string()));
+    viewport_->setPickMode(Kind::Face);
+    viewport_->show();
+    showComponents();
+    viewport_->resetCamera();
+    return true;
 }
 void Window::representation() {
     if(!document_) return;

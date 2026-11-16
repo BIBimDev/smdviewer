@@ -8,17 +8,12 @@
 namespace inspector {
 enum class Representation { Faces, Solid, Candidate, Extensions, Reductions };
 enum class Kind { Vertex, Edge, Face, Body };
-struct Specimen { const char* key; const char* label; const char* filename; };
-inline constexpr Specimen specimens[] = {
-    {"plain", "Plain column", "plain_column.smd"},
-    {"combined", "Combined pocket/corbel column", "SinglePocketingSingleCorbelColumn.smd"}
-};
 const char* name(Representation);
 const char* name(Kind);
 
 // Owned pipeline evidence. The UI retains this through a const shared pointer.
 struct Document {
-    std::string specimen;
+    std::string identity; // SHA-256 of canonical path plus the exact bytes read.
     smd::ParsedSmd parsed;
     smd_geometry::FaceConversion converted;
     smd_geometry::ShellAssembly shell;
@@ -26,8 +21,9 @@ struct Document {
     smd_geometry::PrincipalPrismCandidate candidate;
     smd_geometry::BooleanDecomposition decomposition;
 };
-std::shared_ptr<const Document> buildDocument(std::string specimen, smd::ParsedSmd parsed);
-std::shared_ptr<const Document> loadDocument(std::size_t specimen, const std::filesystem::path& directory);
+std::shared_ptr<const Document> buildDocument(std::string identity, smd::ParsedSmd parsed);
+std::shared_ptr<const Document> loadDocument(const std::filesystem::path& file);
+std::string pathText(const std::filesystem::path&); // UTF-8, including diagnostics.
 
 struct Entity {
     std::string id;

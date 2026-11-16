@@ -11,6 +11,7 @@
 #include <TopoDS_Wire.hxx>
 #include <Standard_Failure.hxx>
 #include <fstream>
+#include <QCryptographicHash>
 #include <algorithm>
 #include <iomanip>
 #include <iterator>
@@ -33,9 +34,9 @@ const char* name(Kind k) {
     case Kind::Face: return "Face"; case Kind::Body: return "Body"; }
     return "Unknown";
 }
-std::shared_ptr<const Document> buildDocument(std::string specimen, smd::ParsedSmd parsed) {
+std::shared_ptr<const Document> buildDocument(std::string identity, smd::ParsedSmd parsed) {
     auto d = std::make_shared<Document>();
-    d->specimen = std::move(specimen);
+    d->identity = std::move(identity);
     d->parsed = std::move(parsed);
     std::string stage = "convertFaces";
     try {
@@ -56,16 +57,36 @@ std::shared_ptr<const Document> buildDocument(std::string specimen, smd::ParsedS
     }
     return d; // Publish only a complete, validated pipeline.
 }
-std::shared_ptr<const Document> loadDocument(std::size_t specimen, const std::filesystem::path& directory) {
-    if(specimen >= std::size(specimens)) throw std::runtime_error("Unknown specimen index");
-    const auto path = directory / specimens[specimen].filename;
-    std::ifstream input(path, std::ios::binary);
-    if(!input) throw std::runtime_error("Cannot read original fixture: " + path.string());
-    const std::string text{std::istreambuf_iterator<char>(input), {}};
-    if(input.bad()) throw std::runtime_error("Failed reading fixture: " + path.string());
-    try { return buildDocument(specimens[specimen].key, smd::parseSmd10125(text)); }
-    catch(const std::exception& e) { throw std::runtime_error(path.string() + ": " + e.what()); }
+std::string pathText(const std::filesystem::path& path) {
+    const auto utf8 = path.generic_u8string();
+    return {utf8.begin(), utf8.end()};
 }
+std::shared_ptr<const Document> loadDocument(const std::filesystem::path& path) {
+    std::string stage = "read";
+    try {
+        const auto canonical = std::filesystem::canonical(path);
+        if(!std::filesystem::is_regular_file(canonical)) throw std::runtime_error("Not a regular file");
+        std::ifstream input(canonical, std::ios::binary);
+        if(!input) throw std::runtime_error("Cannot open file");
+        const std::string text{std::istreambuf_iterator<char>(input), {}};
+        if(input.bad()) throw std::runtime_error("Failed reading file");
+        // Hash exactly the bytes parsed. Canonical path prevents basename collisions;
+        // contents prevent stale tags when a file is edited in place. No persistent store.
+        const auto fileIdentity = pathText(canonical);
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        hash.addData(QByteArray::fromRawData(fileIdentity.data(), fileIdentity.size()));
+        hash.addData(QByteArray(1, '\0'));
+        hash.addData(QByteArray::fromRawData(text.data(), text.size()));
+        const auto identity = hash.result().toHex().toStdString();
+        stage = "parseSmd10125";
+        auto parsed = smd::parseSmd10125(text);
+        stage = "geometry"; // buildDocument supplies the precise geometry stage.
+        return buildDocument(identity, std::move(parsed));
+    } catch(const std::exception& e) {
+        throw std::runtime_error(pathText(path) + ": " + stage + ": " + e.what());
+    }
+}
+
 namespace {
 using ShapeMap = NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher>;
 const char* key(Representation r) {
@@ -77,7 +98,7 @@ const char* key(Representation r) {
 Component copyComponent(const Document& d, Representation r, std::size_t index,
                         const TopoDS_Shape& original, const smd_geometry::BooleanSolid* booleanBody) {
     Component c;
-    c.id = d.specimen + "/" + key(r) + "/" + std::to_string(index);
+    c.id = d.identity + "/" + key(r) + "/" + std::to_string(index);
     c.label = r == Representation::Faces ? "Source face " + std::to_string(index) : "Body " + std::to_string(index);
     c.original = original;
     BRepBuilderAPI_Copy copier(original, true, false); // Private surfaces/curves; no shared meshes.
