@@ -12,6 +12,8 @@ class Window : public QMainWindow {
 public:
     explicit Window(std::filesystem::path samples);
     ~Window() override;
+protected:
+    bool eventFilter(QObject*, QEvent*) override;
 private:
     void open();
     bool load(const std::filesystem::path& file);
@@ -34,6 +36,7 @@ private:
     QPlainTextEdit* details_;
     QLineEdit* tag_;
     QLabel* status_;
+    QLabel* projection_;
     std::map<std::string,QTreeWidgetItem*> items_;
 };
 }

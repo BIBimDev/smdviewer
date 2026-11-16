@@ -1,5 +1,7 @@
 # GEO-Visualiser — native inspection
 
+Current camera controls and Kubuntu handoff: [GEO-VIS-CAMERA-01](GEO-VIS-CAMERA-01.md).
+
 Current file-open/reset behaviour and Kubuntu handoff: [GEO-VIS-OPEN-01](GEO-VIS-OPEN-01.md).
 The build and acceptance records below describe the original draft unless dated otherwise.
 

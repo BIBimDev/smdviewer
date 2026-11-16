@@ -7,6 +7,10 @@
 #include <QTimer>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QApplication>
+#include <QKeyEvent>
+#include <QStatusBar>
+#include <QTextEdit>
 #include <Standard_Failure.hxx>
 #include <sstream>
 #include <iomanip>
@@ -79,7 +83,7 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     viewport_ = new Viewport;
     split->addWidget(viewport_);
     split->setSizes({440,960});
-    layout->addWidget(new QLabel("Raw source-local mm | Left drag: orbit | Right/middle drag: pan | Wheel: zoom | Click: pick | Tags last for this run"));
+    layout->addWidget(new QLabel("Raw source-local mm | P: projection | Cube: direction | Left drag: orbit | Right/middle drag: pan | Wheel: zoom | Click: pick | Tags last for this run"));
     connect(openButton,&QPushButton::clicked,this,[&] { open(); });
     connect(representation_,&QComboBox::currentIndexChanged,this,[&] { representation(); });
     connect(component_,&QComboBox::currentIndexChanged,this,[&] { showComponents(); });
@@ -94,6 +98,14 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     connect(saveTag,&QPushButton::clicked,this,[&] { tag(false); });
     connect(removeTag,&QPushButton::clicked,this,[&] { tag(true); });
     connect(tag_,&QLineEdit::returnPressed,this,[&] { tag(false); });
+    projection_=new QLabel;
+    projection_->setObjectName("projection");
+    statusBar()->addPermanentWidget(projection_);
+    viewport_->projectionChanged=[&] {
+        projection_->setText(viewport_->perspective()?"P · Perspective":"O · Orthographic");
+    };
+    viewport_->projectionChanged();
+    qApp->installEventFilter(this);
     viewport_->selectionChanged = [&](const std::string& id) { select(id,true); };
     // Defer clearing data until the viewport's current OCCT callback has returned.
     viewport_->failed = [&](const std::string& message) { QTimer::singleShot(0,this,[this,message] { fail(message); }); };
@@ -102,9 +114,26 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
 Window::~Window() {
     // Release OCCT/GL while the parent's native window is still alive and
     // before the display-model members referenced by the viewport are destroyed.
+    qApp->removeEventFilter(this);
+    viewport_->projectionChanged = {};
     viewport_->selectionChanged = {};
     viewport_->failed = {};
     delete viewport_;
+}
+bool Window::eventFilter(QObject* watched,QEvent* event) {
+    if(event->type()!=QEvent::KeyPress) return QMainWindow::eventFilter(watched,event);
+    const auto* key=static_cast<QKeyEvent*>(event);
+    const auto* widget=qobject_cast<QWidget*>(watched);
+    if(!widget || widget->window()!=this || QApplication::activeModalWidget() ||
+       key->key()!=Qt::Key_P || key->modifiers()!=Qt::NoModifier)
+        return QMainWindow::eventFilter(watched,event);
+    // Keep text input and dialog shortcuts entirely within their owning widget.
+    for(auto* focus=QApplication::focusWidget();focus;focus=focus->parentWidget()) {
+        if(qobject_cast<QLineEdit*>(focus) || qobject_cast<QPlainTextEdit*>(focus) || qobject_cast<QTextEdit*>(focus))
+            return QMainWindow::eventFilter(watched,event);
+    }
+    if(!key->isAutoRepeat()) viewport_->toggleProjection();
+    return true;
 }
 void Window::fail(const std::string& message) {
     viewport_->showDisplay(nullptr);

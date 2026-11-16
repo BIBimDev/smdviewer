@@ -1,4 +1,6 @@
 #include "model.hpp"
+#include "camera_tests.hpp"
+#include <QKeyEvent>
 #include "viewport.hpp"
 #include "window.hpp"
 #include "smd/json.hpp"
@@ -292,6 +294,7 @@ void uiChecks(const std::filesystem::path& samples) {
     auto* tags=window.findChild<QLineEdit*>("tag");
     auto* details=window.findChild<QPlainTextEdit*>("details");
     auto* status=window.findChild<QLabel*>("status");
+    auto* projection=window.findChild<QLabel*>("projection");
     auto* save=window.findChild<QPushButton*>("saveTag");
     auto* remove=window.findChild<QPushButton*>("removeTag");
     auto* pickMode=window.findChild<QComboBox*>("pick");
@@ -299,6 +302,15 @@ void uiChecks(const std::filesystem::path& samples) {
     for(auto* child:window.findChildren<QWidget*>()) if(auto* candidate=dynamic_cast<Viewport*>(child)) viewport=candidate;
     require(viewport && open && filename,"file controls and viewport exist");
     require(!window.findChild<QComboBox*>("specimen") && reps->currentIndex()==1 && filename->text()==fixtures[0],"Open replaces dropdown; initial plain S");
+    const auto sameCamera=[](const auto& a,const auto& b) {
+        return a->ProjectionType()==b->ProjectionType() && a->Eye().Distance(b->Eye())==0 &&
+            a->Center().Distance(b->Center())==0 && a->Direction().IsEqual(b->Direction(),0) &&
+            a->Up().IsEqual(b->Up(),0) && a->Scale()==b->Scale();
+    };
+    const auto keyP=[&](QWidget* target,bool repeat=false) {
+        QKeyEvent event(QEvent::KeyPress,Qt::Key_P,Qt::NoModifier,"p",repeat);
+        QApplication::sendEvent(target,&event);
+    };
     // Drive the actual Qt modal dialog; its reset directory is checked on EVERY open.
     const auto openFile=[&](const std::filesystem::path& file, bool cancel=false) {
         bool handled=false;
@@ -312,6 +324,10 @@ void uiChecks(const std::filesystem::path& samples) {
                 if(std::filesystem::path(dialog->directory().absolutePath().toStdU16String())!=samples) {
                     error="dialog must start in checkout public/samples";dialog->reject();return;
                 }
+                const auto before=viewport->camera();
+                auto* filenameEdit=dialog->findChild<QLineEdit*>("fileNameEdit");
+                filenameEdit->setFocus();keyP(filenameEdit);
+                require(sameCamera(before,viewport->camera()),"typing p in file dialog cannot change camera");
                 if(cancel) {dialog->reject();return;}
                 dialog->setDirectory(QString::fromStdU16String(file.parent_path().u16string()));
                 dialog->findChild<QLineEdit*>("fileNameEdit")->setText(QString::fromStdU16String(file.u16string()));
@@ -351,6 +367,7 @@ void uiChecks(const std::filesystem::path& samples) {
     const auto initialCamera=camera();
     const auto reset=[&] {
         require(reps->currentIndex()==1 && component->currentIndex()==0 && pickMode->currentIndex()==2,"successful open resets S/All/Face");
+        require(!viewport->perspective() && projection->text()=="O · Orthographic","successful open resets actual Orthographic and indicator");
         require(!tree->currentItem() && tree->selectedItems().empty() && viewport->selectedId().empty(),"successful open clears tree and viewport owner");
         require(tags->text().isEmpty() && !tags->isEnabled() && !details->toPlainText().contains("Viewer ID"),"successful open clears details and active tag editor");
         require(viewport->error().empty(),viewport->error());
@@ -382,17 +399,43 @@ void uiChecks(const std::filesystem::path& samples) {
     require(restartedFinished && restarted.exitStatus()==QProcess::NormalExit && restarted.exitCode()==0,
             "new process starts without saved tags: "+restarted.readAllStandardError().toStdString());
     require(openFile(samples/fixtures[1]).isEmpty(),"open combined");reset();
+    selectFace();tags->setText("camera tag");save->click();
+    const auto cameraSelection=viewport->selectedId();
+    auto* cameraRow=tree->currentItem();
+    const auto cameraDetails=details->toPlainText();
+    viewport->setFocus();QApplication::processEvents();
+    const auto orthographic=viewport->camera();
+    keyP(viewport);
+    require(viewport->perspective() && projection->text()=="P · Perspective","P selects actual Perspective and indicator");
+    const auto perspective=viewport->camera();
+    keyP(viewport,true);keyP(viewport,true);
+    require(sameCamera(perspective,viewport->camera()),"holding P ignores auto-repeat");
+    require(orthographic->Direction().IsEqual(perspective->Direction(),1e-12) && orthographic->Up().IsEqual(perspective->Up(),1e-12) &&
+            orthographic->Center().Distance(perspective->Center())<1e-8 && std::abs(orthographic->Scale()-perspective->Scale())<1e-8,"P retains direction/up/target/scale");
+    keyP(viewport);
+    require(!viewport->perspective() && projection->text()=="O · Orthographic","second P returns Orthographic indicator");
+    require(viewport->selectedId()==cameraSelection && tree->currentItem()==cameraRow && tree->currentItem()->text(1)=="camera tag" &&
+            tags->text()=="camera tag" && details->toPlainText()==cameraDetails,"P twice preserves owner/tree/highlight/tag/details");
+    tags->setFocus();tags->clear();keyP(tags);
+    require(tags->text()=="p" && !viewport->perspective(),"typing p in tag edits text without toggling");
+    viewport->setFocus();viewport->orient(V3d_Zpos);
+    require(projection->text()=="O · Orthographic","Orthographic Top remains O");
+    keyP(viewport);viewport->orient(V3d_XposYnegZpos);
+    require(projection->text()=="P · Perspective","Perspective cube corner remains P");
     reps->setCurrentIndex(4);component->setCurrentIndex(1);selectFace();
     tags->setText("saved R tag");save->click();tags->setText("unsaved editor text");
     auto reduction=prepareDisplay(*loadDocument(samples/fixtures[1]),Representation::Reductions);
     navigation(*viewport,reduction);
     const auto previousCamera=camera();
+    const auto previousCameraState=viewport->camera();
+    require(viewport->perspective(),"cancel/failure test starts in Perspective");
     const auto selected=viewport->selectedId();
     const auto previousDetails=details->toPlainText(), previousStatus=status->text();
     const auto retained=[&] {
         require(reps->currentIndex()==4 && component->currentIndex()==1 && pickMode->currentIndex()==2,"failed/cancelled open retains controls");
         require(viewport->selectedId()==selected && tree->currentItem() && tree->currentItem()->text(1)=="saved R tag","failed/cancelled open retains selected owner and saved tag");
         require(tags->text()=="unsaved editor text" && details->toPlainText()==previousDetails && status->text()==previousStatus && camera()==previousCamera,"failed/cancelled open retains editor, details, status and camera");
+        require(sameCamera(previousCameraState,viewport->camera()) && projection->text()=="P · Perspective","cancel/failure preserves complete camera and projection indicator");
         require(filename->text()==fixtures[1],"failed/cancelled open retains active filename");
     };
     openFile({},true);retained();
@@ -435,8 +478,8 @@ void uiChecks(const std::filesystem::path& samples) {
 }
 int main(int argc,char** argv) {
     try {
-        require(argc==2 || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--fresh-window" || std::string(argv[2])=="--open")),
-                "usage: smd-inspector-tests <samples> [--render|--open|--fresh-window]");
+        require(argc==2 || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--fresh-window" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera")),
+                "usage: smd-inspector-tests <samples> [--render|--open|--camera|--fresh-window]");
         const std::filesystem::path samples=argv[1];
         if(argc==3 && std::string(argv[2])=="--open") {
             QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -453,10 +496,18 @@ int main(int argc,char** argv) {
             for(QTreeWidgetItemIterator it(tree);*it;++it) require((*it)->text(1).isEmpty(),"restart has no saved tags");
             return 0;
         }
+        cameraMappingChecks();
         const bool rendering=argc==3;
         std::unique_ptr<QApplication> application;
         std::unique_ptr<Viewport> viewport;
         if(rendering) {QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);application=std::make_unique<QApplication>(argc,argv);viewport=std::make_unique<Viewport>();viewport->resize(900,800);viewport->show();QApplication::processEvents();require(viewport->ready() && viewport->error().empty(),"viewport initialization: "+viewport->error());}
+        if(argc==3 && std::string(argv[2])=="--camera") {
+            const auto document=loadDocument(samples/fixtures[1]);
+            const auto display=prepareDisplay(*document,Representation::Solid);
+            cameraRenderChecks(*viewport,display);
+            uiChecks(samples);
+            return 0;
+        }
         std::set<std::string> allIds;
         Tags tags;
         for(std::size_t fixture=0;fixture<2;++fixture) {
@@ -530,7 +581,7 @@ int main(int argc,char** argv) {
                 }
                 if(representation==Representation::Candidate) require(tags.get(first(display,Kind::Face).id).empty(),"candidate/source tags separate");
                 require(snapshot(*d)==before,"evidence preserved through display preparation");
-                if(rendering) {render(*viewport,display);require(snapshot(*d)==before,"evidence preserved through AIS rendering and picking");}
+                if(rendering) {if(fixture==1 && representation==Representation::Solid) cameraRenderChecks(*viewport,display);render(*viewport,display);require(snapshot(*d)==before,"evidence preserved through AIS rendering and picking");}
             }
             require(tags.get(first(prepareDisplay(*d,Representation::Solid),Kind::Face).id)=="test tag","tag survives display recreation");
             auto bad=d->parsed;bad.geometry.brep.faces[0].indices.clear();

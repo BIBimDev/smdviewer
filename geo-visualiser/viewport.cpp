@@ -3,6 +3,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QImage>
+#include <V3d.hxx>
 #include <Image_PixMap.hxx>
 #include <Aspect_DisplayConnection.hxx>
 #include <OpenGl_GraphicDriver.hxx>
@@ -67,6 +68,8 @@ void Viewport::initialize() {
     view_->SetBackgroundColor(Quantity_Color(0.10,0.12,0.16,Quantity_TOC_RGB));
     view_->SetProj(V3d_XposYnegZpos);
     view_->MustBeResized();
+    cube_ = new ViewCube();
+    cube_->setPixelRatio(devicePixelRatioF());
     populate();
 }
 int Viewport::mode() const {
@@ -92,6 +95,8 @@ void Viewport::populate() {
         context_->Load(ais,-1);
         objects_.push_back({&c,ais});
     }
+    context_->Display(cube_,0,0,false);
+    context_->Activate(cube_,0);
     activate();
     fit();
     view_->Redraw();
@@ -151,24 +156,76 @@ bool Viewport::select(const std::string& id) {
 }
 std::string Viewport::pick(int x, int y) {
     std::string id;
+    bool cubeClick=false;
     guard([&] {
         if(context_.IsNull()) return;
-        context_->MoveTo(x,y,view_,false);
+        if(const auto direction=cubeDirectionAt(x,y)) {
+            cubeClick=true;
+            orient(*direction);
+            context_->MoveTo(x,y,view_,false);
+            redraw();
+            id=selectedId();
+            return;
+        }
+        if(cubeArea(x,y)) { cubeClick=true;id=selectedId();return; }
         if(context_->HasDetected()) id = ownerId(context_->DetectedOwner());
         if(id.empty()) context_->ClearSelected(false);
         else context_->SelectDetected(AIS_SelectionScheme_Replace);
         redraw();
     });
-    if(selectionChanged) selectionChanged(id);
+    // A navigation click never synchronizes/clears the inspector selection.
+    if(!cubeClick && selectionChanged) selectionChanged(id);
     return id;
 }
 void Viewport::resetCamera() {
     guard([&] {
         if(view_.IsNull()) return;
         view_->Reset(false);
-        view_->SetProj(V3d_XposYnegZpos);
+        view_->Camera()->SetProjectionType(Graphic3d_Camera::Projection_Orthographic);
+        orient(V3d_XposYnegZpos);
         fit();
+        if(projectionChanged) projectionChanged();
     });
+}
+bool Viewport::perspective() const {
+    return !view_.IsNull() && view_->Camera()->ProjectionType()==Graphic3d_Camera::Projection_Perspective;
+}
+occ::handle<Graphic3d_Camera> Viewport::camera() const {
+    return view_.IsNull()?occ::handle<Graphic3d_Camera>():new Graphic3d_Camera(view_->Camera());
+}
+void Viewport::toggleProjection() {
+    guard([&] {
+        if(view_.IsNull()) return;
+        const auto& camera=view_->Camera();
+        const double scale=camera->Scale();
+        camera->SetProjectionType(perspective()?Graphic3d_Camera::Projection_Orthographic:
+                                              Graphic3d_Camera::Projection_Perspective);
+        camera->SetScale(scale); // OCCT adjusts perspective eye distance about the same target.
+        view_->ZFitAll();
+        redraw();
+        if(projectionChanged) projectionChanged();
+    });
+}
+void Viewport::orient(V3d_TypeOfOrientation direction) {
+    guard([&] {
+        if(view_.IsNull()) return;
+        const auto& camera=view_->Camera();
+        // Keep target/distance/scale; SetProj(enum) also pans about the world origin.
+        camera->SetDirection(-V3d::GetProjAxis(direction));
+        camera->SetUp(direction==V3d_Zpos?gp::DY():direction==V3d_Zneg?-gp::DY():gp::DZ());
+        camera->OrthogonalizeUp();
+        view_->ZFitAll();
+        redraw();
+    });
+}
+std::optional<V3d_TypeOfOrientation> Viewport::cubeDirectionAt(int x,int y) {
+    if(context_.IsNull()) return {};
+    context_->MoveTo(x,y,view_,false);
+    if(context_->HasDetected()) {
+        const auto owner=occ::down_cast<AIS_ViewCubeOwner>(context_->DetectedOwner());
+        if(!owner.IsNull() && owner->Selectable()==cube_) return owner->MainOrientation();
+    }
+    return {};
 }
 void Viewport::fit() {
     guard([&] { if(!view_.IsNull() && !objects_.empty()) { view_->FitAll(0.06,false); view_->ZFitAll(); view_->Redraw(); } });
@@ -181,6 +238,10 @@ void Viewport::redraw() {
     // Synchronize against the actual drawable immediately before painting.
     const QSize size(widthPx,heightPx);
     if(size!=nativeSize_) {
+        if(!cube_.IsNull() && std::abs(cube_->Size()-84*devicePixelRatioF())>0.01) {
+            cube_->setPixelRatio(devicePixelRatioF());
+            context_->Redisplay(cube_,false);
+        }
         nativeSize_=size;
         view_->MustBeResized();
         if(!objects_.empty()) {view_->FitAll(0.06,false);view_->ZFitAll();}
@@ -208,28 +269,46 @@ QPoint Viewport::project(const gp_Pnt& point) const {
     if(!view_.IsNull()) view_->Convert(point.X(),point.Y(),point.Z(),x,y);
     return {x,y};
 }
+bool Viewport::cubeArea(int x,int y) const {
+    // Reserve the small control footprint, including tile gaps/axis arrows.
+    return x>=0 && x<qRound(200*devicePixelRatioF()) && y>=qRound((height()-200)*devicePixelRatioF()) && y<qRound(height()*devicePixelRatioF());
+}
 QPoint Viewport::physical(const QPointF& p) const { return (p * devicePixelRatioF()).toPoint(); }
 void Viewport::showEvent(QShowEvent*) { guard([&] { if(view_.IsNull()) initialize(); }); }
 void Viewport::paintEvent(QPaintEvent*) { guard([&] { redraw(); }); }
 void Viewport::resizeEvent(QResizeEvent*) { nativeSize_={};update(); }
 void Viewport::mousePressEvent(QMouseEvent* e) {
+    setFocus(Qt::MouseFocusReason);
     press_ = previous_ = physical(e->position()); dragged_ = false;
-    guard([&] { if(!view_.IsNull() && e->button() == Qt::LeftButton) view_->StartRotation(press_.x(),press_.y()); });
+    cubePressed_=cubeArea(press_.x(),press_.y());
+    guard([&] { if(!view_.IsNull() && !cubePressed_ && e->button() == Qt::LeftButton) view_->StartRotation(press_.x(),press_.y()); });
 }
 void Viewport::mouseMoveEvent(QMouseEvent* e) {
     const auto p = physical(e->position());
     if((p-press_).manhattanLength() > 4*devicePixelRatioF()) dragged_ = true;
     guard([&] {
-        if(view_.IsNull()) return;
-        if(e->buttons() & Qt::LeftButton) { if(dragged_) view_->Rotation(p.x(),p.y()); }
+        if(view_.IsNull() || cubePressed_) return;
+        if(e->buttons() & Qt::LeftButton) { if(dragged_) { view_->Rotation(p.x(),p.y()); redraw(); } }
         else if(e->buttons() & (Qt::MiddleButton | Qt::RightButton)) view_->Pan(p.x()-previous_.x(),previous_.y()-p.y());
-        else context_->MoveTo(p.x(),p.y(),view_,true);
+        else {
+            const auto cubeDirection=cubeDirectionAt(p.x(),p.y());
+            if(cubeArea(p.x(),p.y()) && !cubeDirection) context_->ClearDetected(false);
+            redraw();
+        }
     });
     previous_ = p;
 }
 void Viewport::mouseReleaseEvent(QMouseEvent* e) {
     const auto p = physical(e->position());
-    if(e->button() == Qt::LeftButton && !dragged_) pick(p.x(),p.y());
+    guard([&] {
+        if(e->button() == Qt::LeftButton && !dragged_) {
+            if(!cubePressed_ || cubeDirectionAt(p.x(),p.y())) pick(p.x(),p.y());
+        }
+    });
+    cubePressed_=false;
+}
+void Viewport::leaveEvent(QEvent*) {
+    guard([&] { if(!context_.IsNull()) { context_->ClearDetected(false); redraw(); } });
 }
 void Viewport::wheelEvent(QWheelEvent* e) {
     guard([&] { if(!view_.IsNull()) { view_->SetZoom(std::pow(1.15,e->angleDelta().y()/120.0)); redraw(); } });
