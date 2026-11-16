@@ -94,12 +94,18 @@ Existing source-evidence preservation snapshots remain in the full render run.
 Temporary captures/logs are outside the repository under `/tmp/geo-vis-camera-*`.
 
 The tested build uses Ubuntu/Kubuntu 26.04.1, Plasma with XWayland/xcb,
-GCC 15.2.0, Qt 6.10.2 and the existing OCCT 8.0.1 installation. Verification before delivery: native build passed, CTest passed 8/8,
-focused `--camera` passed and full `--render` passed. The exact tested commit
-and final repeat outcomes are in the delivery report. A local Plasma keyboard/indicator visual check was performed. Human
-pointer acceptance is requested separately because XWayland ignored synthetic
-XTest pointer motion on this session; automated real-viewport selection tests
-are separate evidence. Windows and remote-desktop checks remain **pending**.
+GCC 15.2.0, Qt 6.10.2 and the existing OCCT 8.0.1 installation. Exact tested
+source commit: `88bff0d8126d847427d71ae6d15e802babb0a88b`. Native build passed,
+CTest passed 8/8, focused `--camera` passed and full `--render` passed, including
+the final repeat at that commit. A local Plasma keyboard/indicator visual check
+was also performed.
+
+On 2026-11-16 the user reported **Passed** for the short human Plasma pointer
+check: selected-face P/P round trip, cube centre/edge/corner clicks in both
+projections, Top/Bottom, and cube tracking during orbit. This is operator-reported
+acceptance, separate from automated viewport evidence. XWayland ignored the
+agent's synthetic XTest pointer motion, so it was not used as manual evidence.
+Windows and remote-desktop checks remain **pending**.
 
 Repository-required hygiene: `npm ci` passed with zero reported vulnerabilities.
 `npm run build` failed on the baseline's missing/stale `public/wasm` assets and
@@ -107,4 +113,4 @@ requested Emscripten 4.0.20 / `npm run build:wasm`. No WASM rebuild was performe
 The tracked `tsconfig.tsbuildinfo` was restored byte-for-byte after the attempt.
 
 Review items: local cube presentation/hit policy, principal screen-up convention,
-and outstanding operator/platform checks. This ends at GEO-VIS-CAMERA-01.
+and outstanding platform checks. This ends at GEO-VIS-CAMERA-01.
