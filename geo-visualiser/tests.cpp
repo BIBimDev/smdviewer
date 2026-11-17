@@ -309,10 +309,11 @@ void uiChecks(const std::filesystem::path& samples) {
             a->Center().Distance(b->Center())==0 && a->Direction().IsEqual(b->Direction(),0) &&
             a->Up().IsEqual(b->Up(),0) && a->Scale()==b->Scale();
     };
-    const auto keyP=[&](QWidget* target,bool repeat=false) {
-        QKeyEvent event(QEvent::KeyPress,Qt::Key_P,Qt::NoModifier,"p",repeat);
+    const auto key=[&](QWidget* target,int code,bool repeat=false,Qt::KeyboardModifiers modifiers=Qt::NoModifier) {
+        QKeyEvent event(QEvent::KeyPress,code,modifiers,QString(QChar(code).toLower()),repeat);
         QApplication::sendEvent(target,&event);
     };
+    const auto keyP=[&](QWidget* target,bool repeat=false) { key(target,Qt::Key_P,repeat); };
     // Drive the actual Qt modal dialog; its reset directory is checked on EVERY open.
     const auto openFile=[&](const std::filesystem::path& file, bool cancel=false) {
         bool handled=false;
@@ -327,9 +328,11 @@ void uiChecks(const std::filesystem::path& samples) {
                     error="dialog must start in checkout public/samples";dialog->reject();return;
                 }
                 const auto before=viewport->camera();
+                const int representation=reps->currentIndex();
                 auto* filenameEdit=dialog->findChild<QLineEdit*>("fileNameEdit");
-                filenameEdit->setFocus();keyP(filenameEdit);
-                require(sameCamera(before,viewport->camera()),"typing p in file dialog cannot change camera");
+                filenameEdit->setFocus();filenameEdit->clear();
+                for(int code:{Qt::Key_S,Qt::Key_B,Qt::Key_A,Qt::Key_R,Qt::Key_P}) key(filenameEdit,code);
+                require(filenameEdit->text()=="sbarp" && reps->currentIndex()==representation && sameCamera(before,viewport->camera()),"s/b/a/r/p remain normal file dialog text");
                 if(cancel) {dialog->reject();return;}
                 dialog->setDirectory(QString::fromStdU16String(file.parent_path().u16string()));
                 dialog->findChild<QLineEdit*>("fileNameEdit")->setText(QString::fromStdU16String(file.u16string()));
@@ -361,12 +364,47 @@ void uiChecks(const std::filesystem::path& samples) {
         for(QTreeWidgetItemIterator it(tree);*it;++it) if((*it)->data(0,Qt::UserRole).toString().contains("/Face/")) {tree->setCurrentItem(*it);return;}
         throw std::runtime_error("UI face absent");
     };
+    const auto shortcutParity=[&] {
+        const auto state=[&] {
+            QString result=QString::number(reps->currentIndex())+"|"+QString::number(component->currentIndex())+"|"+
+                QString::number(component->count())+"|"+QString::number(component->isEnabled())+"|"+
+                QString::number(pickMode->currentIndex())+"|"+QString::fromStdString(viewport->selectedId())+"|"+
+                tags->text()+"|"+QString::number(tags->isEnabled())+"|"+details->toPlainText()+"|"+status->text();
+            for(QTreeWidgetItemIterator it(tree);*it;++it)
+                result+="|"+(*it)->text(0)+"|"+(*it)->text(1)+"|"+(*it)->data(0,Qt::UserRole).toString();
+            return result;
+        };
+        for(bool perspective:{false,true}) {
+            reps->setCurrentIndex(1);viewport->resetCamera();
+            if(perspective) keyP(viewport);
+            for(const auto [code,index]:{std::pair{Qt::Key_S,1},{Qt::Key_B,2},{Qt::Key_A,3},{Qt::Key_R,4}}) {
+                const int source=index==1?2:1;
+                reps->setCurrentIndex(source);selectFace();
+                reps->setCurrentIndex(index);
+                const auto expected=state();const auto expectedCamera=viewport->camera();
+                reps->setCurrentIndex(source);selectFace();viewport->setFocus();QApplication::processEvents();
+                key(viewport,code);
+                require(state()==expected && sameCamera(expectedCamera,viewport->camera()),"shortcut/dropdown parity: camera, selection, tree, details, isolation and empty state");
+                const auto retained=state();const auto before=viewport->camera();
+                for(int other:{Qt::Key_S,Qt::Key_B,Qt::Key_A,Qt::Key_R,Qt::Key_P}) {
+                    key(viewport,other,true);
+                    for(const auto modifier:{Qt::ShiftModifier,Qt::ControlModifier,Qt::AltModifier}) key(viewport,other,false,modifier);
+                }
+                require(state()==retained && sameCamera(before,viewport->camera()),"navigation auto-repeat and modified keys ignored");
+                key(viewport,code);
+                require(state()==retained && sameCamera(before,viewport->camera()),"current representation shortcut is same no-op as dropdown");
+            }
+        }
+        reps->setCurrentIndex(1);viewport->resetCamera();
+        std::cout<<"PASS — S/B/A/R dropdown parity in O/P, empty groups, repeats and modifiers for "<<filename->text().toStdString()<<'\n';
+    };
     const auto camera=[&] {
         std::vector<QPoint> result;
         for(const auto p:{gp_Pnt(-375,-325,-1000),gp_Pnt(375,325,5000),gp_Pnt(0,0,0)}) result.push_back(viewport->project(p));
         return result;
     };
     const auto initialCamera=camera();
+    shortcutParity();
     const auto reset=[&] {
         require(reps->currentIndex()==1 && component->currentIndex()==0 && pickMode->currentIndex()==2,"successful open resets S/All/Face");
         require(!viewport->perspective() && projection->text()=="O · Orthographic","successful open resets actual Orthographic and indicator");
@@ -401,6 +439,7 @@ void uiChecks(const std::filesystem::path& samples) {
     require(restartedFinished && restarted.exitStatus()==QProcess::NormalExit && restarted.exitCode()==0,
             "new process starts without saved tags: "+restarted.readAllStandardError().toStdString());
     require(openFile(samples/fixtures[1]).isEmpty(),"open combined");reset();
+    shortcutParity();
     selectFace();tags->setText("camera tag");save->click();
     auto* style=window.findChild<QComboBox*>("displayStyle");
     auto* context=window.findChild<QCheckBox*>("showContext");
@@ -433,6 +472,10 @@ void uiChecks(const std::filesystem::path& samples) {
     const auto cameraSelection=viewport->selectedId();
     auto* cameraRow=tree->currentItem();
     const auto cameraDetails=details->toPlainText();
+    // Synthetic key delivery must also establish the real Qt focus chain;
+    // an inactive window can otherwise propagate ignored editor keys upward.
+    window.activateWindow();
+    window.raise();
     viewport->setFocus();QApplication::processEvents();
     const auto orthographic=viewport->camera();
     keyP(viewport);
@@ -446,8 +489,15 @@ void uiChecks(const std::filesystem::path& samples) {
     require(!viewport->perspective() && projection->text()=="O · Orthographic","second P returns Orthographic indicator");
     require(viewport->selectedId()==cameraSelection && tree->currentItem()==cameraRow && tree->currentItem()->text(1)=="camera tag" &&
             tags->text()=="camera tag" && details->toPlainText()==cameraDetails,"P twice preserves owner/tree/highlight/tag/details");
-    tags->setFocus();tags->clear();keyP(tags);
-    require(tags->text()=="p" && !viewport->perspective(),"typing p in tag edits text without toggling");
+    tags->setFocus();tags->clear();
+    require(QApplication::focusWidget()==tags,"tag typing test has actual Qt editor focus");
+    for(int code:{Qt::Key_S,Qt::Key_B,Qt::Key_A,Qt::Key_R,Qt::Key_P}) key(tags,code);
+    require(tags->text()=="sbarp" && !viewport->perspective() && reps->currentIndex()==1 && viewport->selectedId()==cameraSelection,
+            "typing s/b/a/r/p edits tag text without navigation: text="+tags->text().toStdString()+", rep="+std::to_string(reps->currentIndex())+", perspective="+std::to_string(viewport->perspective()));
+    details->setFocus();
+    require(QApplication::focusWidget()==details,"details typing test has actual Qt editor focus");
+    for(int code:{Qt::Key_S,Qt::Key_B,Qt::Key_A,Qt::Key_R,Qt::Key_P}) key(details,code);
+    require(details->toPlainText()==cameraDetails && !viewport->perspective() && reps->currentIndex()==1,"read-only text editor suppresses navigation keys");
     viewport->setFocus();viewport->orient(V3d_Zpos);
     require(projection->text()=="O · Orthographic","Orthographic Top remains O");
     keyP(viewport);viewport->orient(V3d_XposYnegZpos);
@@ -535,6 +585,7 @@ int main(int argc,char** argv) {
             const auto document=loadDocument(samples/fixtures[1]);
             const auto display=prepareDisplay(*document,Representation::Solid);
             cameraRenderChecks(*viewport,display);
+            cameraSnapClearanceChecks(*viewport,prepareDisplay(*document,Representation::Candidate));
             uiChecks(samples);
             return 0;
         }
@@ -623,7 +674,11 @@ int main(int argc,char** argv) {
                 }
                 if(representation==Representation::Candidate) require(tags.get(first(display,Kind::Face).id).empty(),"candidate/source tags separate");
                 require(snapshot(*d)==before,"evidence preserved through display preparation");
-                if(rendering) {if(fixture==1 && representation==Representation::Solid) cameraRenderChecks(*viewport,display);render(*viewport,display);require(snapshot(*d)==before,"evidence preserved through AIS rendering and picking");}
+                if(rendering) {
+                    if(fixture==1 && representation==Representation::Solid) cameraRenderChecks(*viewport,display);
+                    if(fixture==1 && representation==Representation::Candidate) cameraSnapClearanceChecks(*viewport,display);
+                    render(*viewport,display);require(snapshot(*d)==before,"evidence preserved through AIS rendering and picking");
+                }
             }
             require(tags.get(first(prepareDisplay(*d,Representation::Solid),Kind::Face).id)=="test tag","tag survives display recreation");
             if(rendering) {

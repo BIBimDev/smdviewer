@@ -138,16 +138,28 @@ Window::~Window() {
 bool Window::eventFilter(QObject* watched,QEvent* event) {
     if(event->type()!=QEvent::KeyPress) return QMainWindow::eventFilter(watched,event);
     const auto* key=static_cast<QKeyEvent*>(event);
-    const auto* widget=qobject_cast<QWidget*>(watched);
+    auto* widget=qobject_cast<QWidget*>(watched);
     if(!widget || widget->window()!=this || QApplication::activeModalWidget() ||
-       key->key()!=Qt::Key_P || key->modifiers()!=Qt::NoModifier)
+       key->modifiers()!=Qt::NoModifier)
         return QMainWindow::eventFilter(watched,event);
     // Keep text input and dialog shortcuts entirely within their owning widget.
-    for(auto* focus=QApplication::focusWidget();focus;focus=focus->parentWidget()) {
-        if(qobject_cast<QLineEdit*>(focus) || qobject_cast<QPlainTextEdit*>(focus) || qobject_cast<QTextEdit*>(focus))
-            return QMainWindow::eventFilter(watched,event);
+    for(auto* start:{widget,QApplication::focusWidget()})
+        for(auto* focus=start;focus;focus=focus->parentWidget())
+            if(qobject_cast<QLineEdit*>(focus) || qobject_cast<QPlainTextEdit*>(focus) || qobject_cast<QTextEdit*>(focus))
+                return QMainWindow::eventFilter(watched,event);
+    int representation=-1;
+    switch(key->key()) {
+    case Qt::Key_S: representation=static_cast<int>(Representation::Solid);break;
+    case Qt::Key_B: representation=static_cast<int>(Representation::Candidate);break;
+    case Qt::Key_A: representation=static_cast<int>(Representation::Extensions);break;
+    case Qt::Key_R: representation=static_cast<int>(Representation::Reductions);break;
+    case Qt::Key_P: break;
+    default: return QMainWindow::eventFilter(watched,event);
     }
-    if(!key->isAutoRepeat()) viewport_->toggleProjection();
+    if(!key->isAutoRepeat()) {
+        if(representation>=0) representation_->setCurrentIndex(representation);
+        else viewport_->toggleProjection();
+    }
     return true;
 }
 void Window::fail(const std::string& message) {

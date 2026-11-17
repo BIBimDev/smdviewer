@@ -109,6 +109,9 @@ void Viewport::initialize() {
     origin_ = new OriginMarker();
     origin_->SetZLayer(originLayer_);
     origin_->setPixelRatio(devicePixelRatioF());
+    scaleBar_=new ScaleBar();
+    scaleBar_->SetZLayer(originLayer_);
+    scaleBar_->update(view_->Camera()->ViewDimensions().Y()/height()/devicePixelRatioF(),devicePixelRatioF(),perspective());
     populate(true);
 }
 int Viewport::mode() const {
@@ -179,6 +182,7 @@ void Viewport::populate(bool refit) {
     }
     populateContext();
     context_->Display(origin_,0,-1,false);
+    context_->Display(scaleBar_,0,-1,false);
     context_->Display(cube_,0,0,false);
     context_->Activate(cube_,0);
     activate();
@@ -187,7 +191,7 @@ void Viewport::populate(bool refit) {
         if(perspective()) backOffPerspectiveEye();
         fitDepth();
     }
-    view_->Redraw();
+    redraw();
 }
 void Viewport::showDisplay(const Display* display, int isolated, bool refit) {
     display_ = display;
@@ -342,6 +346,7 @@ void Viewport::orient(V3d_TypeOfOrientation direction) {
         camera->SetDirection(-V3d::GetProjAxis(direction));
         camera->SetUp(direction==V3d_Zpos?gp::DY():direction==V3d_Zneg?-gp::DY():gp::DZ());
         camera->OrthogonalizeUp();
+        if(perspective()) backOffPerspectiveEye();
         fitDepth();
         redraw();
     });
@@ -356,7 +361,7 @@ std::optional<V3d_TypeOfOrientation> Viewport::cubeDirectionAt(int x,int y) {
     return {};
 }
 void Viewport::fit() {
-    guard([&] { if(!view_.IsNull() && !objects_.empty()) { frameForeground(); fitDepth(); view_->Redraw(); } });
+    guard([&] { if(!view_.IsNull() && !objects_.empty()) { frameForeground(); redraw(); } });
 }
 void Viewport::frameForeground() {
     // V3d_View::FitAll also expands for zoom-persistent presentations even when
@@ -405,6 +410,9 @@ void Viewport::redraw() {
         if(!objects_.empty()) frameForeground();
     }
     fitDepth();
+    if(!scaleBar_.IsNull() && heightPx>0 &&
+       scaleBar_->update(view_->Camera()->ViewDimensions().Y()/heightPx,devicePixelRatioF(),perspective()))
+        context_->Redisplay(scaleBar_,false);
     view_->Redraw();
 }
 bool Viewport::capture(const std::string& filename) {
@@ -440,14 +448,19 @@ void Viewport::mousePressEvent(QMouseEvent* e) {
     setFocus(Qt::MouseFocusReason);
     press_ = previous_ = physical(e->position()); dragged_ = false;
     cubePressed_=cubeArea(press_.x(),press_.y());
-    guard([&] { if(!view_.IsNull() && !cubePressed_ && e->button() == Qt::LeftButton) view_->StartRotation(press_.x(),press_.y()); });
+    guard([&] { if(!view_.IsNull() && e->button() == Qt::LeftButton) {
+        view_->StartRotation(press_.x(),press_.y());
+        // Keep receiving a cube gesture beyond its footprint and widget edge.
+        if(cubePressed_) grabMouse();
+    } });
 }
 void Viewport::mouseMoveEvent(QMouseEvent* e) {
     const auto p = physical(e->position());
     if((p-press_).manhattanLength() > 4*devicePixelRatioF()) dragged_ = true;
     guard([&] {
-        if(view_.IsNull() || cubePressed_) return;
+        if(view_.IsNull()) return;
         if(e->buttons() & Qt::LeftButton) { if(dragged_) { view_->Rotation(p.x(),p.y()); redraw(); } }
+        else if(cubePressed_) return;
         else if(e->buttons() & (Qt::MiddleButton | Qt::RightButton)) { view_->Pan(p.x()-previous_.x(),previous_.y()-p.y()); redraw(); }
         else {
             const auto cubeDirection=cubeDirectionAt(p.x(),p.y());
@@ -459,11 +472,13 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
 }
 void Viewport::mouseReleaseEvent(QMouseEvent* e) {
     const auto p = physical(e->position());
+    if(cubePressed_ && (p-press_).manhattanLength() > 4*devicePixelRatioF()) dragged_ = true;
     guard([&] {
         if(e->button() == Qt::LeftButton && !dragged_) {
             if(!cubePressed_ || cubeDirectionAt(p.x(),p.y())) pick(p.x(),p.y());
         }
     });
+    if(cubePressed_ && mouseGrabber()==this) releaseMouse();
     cubePressed_=false;
 }
 void Viewport::leaveEvent(QEvent*) {

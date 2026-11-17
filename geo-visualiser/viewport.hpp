@@ -2,6 +2,7 @@
 #include "model.hpp"
 #include "view_cube.hpp"
 #include "origin_marker.hpp"
+#include "scale_bar.hpp"
 #include "decorations.hpp"
 #include "appearance.hpp"
 #include <QWidget>
@@ -53,6 +54,7 @@ protected:
     void wheelEvent(QWheelEvent*) override;
 private:
     friend struct ViewportProbe; // Focused native presentation regressions.
+    friend struct NavigationProbe;
     struct Object { const Component* component; occ::handle<AIS_Shape> ais; };
     void initialize();
     void populate(bool refit);
@@ -79,6 +81,7 @@ private:
     occ::handle<V3d_View> view_;
     occ::handle<ViewCube> cube_;
     occ::handle<OriginMarker> origin_;
+    occ::handle<ScaleBar> scaleBar_;
     occ::handle<FaceHighlight> faceHighlight_;
     Graphic3d_ZLayerId contextLayer_ = Graphic3d_ZLayerId_UNKNOWN;
     Graphic3d_ZLayerId contextOverlayLayer_ = Graphic3d_ZLayerId_UNKNOWN;

@@ -3,6 +3,8 @@
 #include <QMouseEvent>
 #include <QImage>
 #include <QEvent>
+#include <QWheelEvent>
+#include <SelectMgr_Selection.hxx>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
 #include <BRep_Tool.hxx>
@@ -19,6 +21,14 @@
 #include <cmath>
 #include <iostream>
 
+namespace inspector {
+struct NavigationProbe {
+    static auto& view(Viewport& v) { return v.view_; }
+    static auto& bar(Viewport& v) { return v.scaleBar_; }
+    static auto& context(Viewport& v) { return v.context_; }
+    static auto owner(Viewport& v) { v.context_->InitSelected();return v.context_->SelectedOwner(); }
+};
+}
 namespace {
 void check(bool value,const char* why) { if(!value) throw std::runtime_error(why); }
 // Explicit contract in V3d enum order; these are outward eye directions, not rays.
@@ -41,6 +51,68 @@ void direction(inspector::Viewport& v,int i) {
     const gp_Dir up=i==V3d_Zpos?gp::DY():i==V3d_Zneg?-gp::DY():gp::DZ();
     const auto projected=gp_Vec(up)-gp_Vec(c->Direction())*up.Dot(c->Direction());
     check(c->Up().IsEqual(gp_Dir(projected),1e-10),"predictable screen up, including top/bottom");
+}
+void scaleBarChecks(inspector::Viewport& v,const std::string& suffix) {
+    using inspector::NavigationProbe;
+    v.redraw();
+    const auto& bar=NavigationProbe::bar(v);
+    const auto c=v.camera();
+    const gp_Vec right=gp_Vec(c->Direction()).Crossed(gp_Vec(c->OrthogonalizedUp()));
+    // Independent known 1000 mm distance on the viewing/target plane.
+    const double projected=QLineF(v.project(c->Center()),v.project(c->Center().Translated(right*1000))).length();
+    check(std::abs(bar->lengthPixels()-projected*bar->lengthMm()/1000)<1.5,"scale bar matches known projected distance");
+    check((bar->label().find("at target")!=std::string::npos)==v.perspective(),"Perspective scale explicitly labelled at target");
+    check(bar->lengthPixels()<=150*v.devicePixelRatioF()+1 && bar->lengthPixels()>=50*v.devicePixelRatioF(),"rounded bar stays compact at display scaling");
+    NCollection_List<int> modes;NavigationProbe::context(v)->ActivatedModes(bar,modes);
+    occ::handle<SelectMgr_Selection> selection=new SelectMgr_Selection(0);bar->ComputeSelection(selection,0);
+    check(bar->IsInfinite() && modes.IsEmpty() && selection->Entities().IsEmpty(),"scale bar passive and excluded from Fit");
+    const auto path=std::filesystem::temp_directory_path()/("geo-vis-scale-"+suffix+".png");
+    check(v.capture(path.string()),"scale bar framebuffer");
+    QImage image(QString::fromStdString(path.string()));
+    // Measure the drawn bright horizontal stroke, independently of AIS geometry.
+    const double ratio=v.devicePixelRatioF();
+    const int end=image.width()-qRound(18*ratio),row=image.height()-qRound(18*ratio);
+    int longest=0;
+    for(int y=row-qRound(2*ratio);y<=row+qRound(2*ratio);++y) {
+        int run=0;
+        for(int x=std::max(0,end-qRound(160*ratio));x<std::min(image.width(),end+qRound(4*ratio));++x) {
+            const auto p=image.pixelColor(x,y);
+            run=p.red()>210 && p.green()>210 && p.blue()>210?run+1:0;
+            longest=std::max(longest,run);
+        }
+    }
+    std::cout<<"Scale "<<suffix<<": "<<bar->label()<<", expected "<<bar->lengthPixels()<<" px, drawn "<<longest<<" px, DPR "<<ratio<<'\n';
+    check(std::abs(longest-bar->lengthPixels())<=4*ratio,"drawn scale bar length matches projected world distance");
+}
+void passiveScaleChecks(inspector::Viewport& v,const inspector::Display& display) {
+    using inspector::NavigationProbe;
+    for(bool perspective:{false,true}) {
+        v.resetCamera();v.orient(V3d_Yneg);v.fit();
+        if(perspective) v.toggleProjection();
+        const auto initial=v.camera();
+        NavigationProbe::context(v)->Erase(NavigationProbe::bar(v),false);v.fit();
+        const auto without=v.camera();
+        // Compare the same Fit from the same camera in both visibility states.
+        NavigationProbe::view(v)->Camera()->Copy(initial);
+        NavigationProbe::context(v)->Display(NavigationProbe::bar(v),0,-1,false);v.fit();
+        check(v.camera()->Center().Distance(without->Center())<1e-8 && std::abs(v.camera()->Scale()-without->Scale())<1e-8 &&
+              without->Eye().Distance(v.camera()->Eye())<1e-8,"scale bar visibility has no effect on Fit");
+        const inspector::Entity* face=nullptr;gp_Pnt interior;
+        for(const auto& c:display.components) for(const auto& e:c.entities) if(e.kind==inspector::Kind::Face) {
+            GProp_GProps props;BRepGProp::SurfaceProperties(e.display,props);
+            if(!face || props.CentreOfMass().Y()<interior.Y()) { face=&e;interior=props.CentreOfMass(); }
+        }
+        check(face!=nullptr,"front face for scale overlay picking");
+        const double ratio=v.devicePixelRatioF();
+        const QPoint target(qRound(v.width()*ratio-18*ratio-NavigationProbe::bar(v)->lengthPixels()/2),qRound((v.height()-18)*ratio));
+        for(int attempt=0;attempt<4;++attempt) {
+            const auto p=v.project(interior);
+            NavigationProbe::view(v)->Pan(target.x()-p.x(),p.y()-target.y());v.redraw();
+        }
+        check((target-v.project(interior)).manhattanLength()<=3,"foreground face panned behind actual scale stroke");
+        check(v.pick(target.x(),target.y())==face->id,"scale stroke does not intercept foreground pick");
+    }
+    std::cout<<"PASS — scale bar does not affect Fit or intercept foreground picks in O/P\n";
 }
 void endProjectionChecks(inspector::Viewport& v,const inspector::Display& display) {
     std::vector<gp_Pnt> vertices;
@@ -106,6 +178,70 @@ void endProjectionChecks(inspector::Viewport& v,const inspector::Display& displa
 }
 
 }
+void cameraSnapClearanceChecks(inspector::Viewport& v,const inspector::Display& candidate) {
+    using inspector::NavigationProbe;
+    v.showDisplay(&candidate);v.setPickMode(inspector::Kind::Face);
+    for(const auto orientation:{V3d_Zpos,V3d_Zneg}) {
+        v.resetCamera();v.orient(orientation);v.fit();
+        scaleBarChecks(v,orientation==V3d_Zpos?"top-end-orthographic":"bottom-end-orthographic");
+        check(NavigationProbe::bar(v)->label().find(" mm")!=std::string::npos,"small fitted end view uses millimetre label");
+        v.orient(V3d_Xpos);
+        v.toggleProjection(); // Same action as P; side has clearance without Fit.
+        const auto before=v.camera();
+        const auto& component=candidate.components.front();
+        double endZ=orientation==V3d_Zpos?std::numeric_limits<double>::lowest():std::numeric_limits<double>::max();
+        for(TopExp_Explorer it(component.display,TopAbs_VERTEX);it.More();it.Next()) {
+            const double z=BRep_Tool::Pnt(TopoDS::Vertex(it.Current())).Z();
+            endZ=orientation==V3d_Zpos?std::max(endZ,z):std::min(endZ,z);
+        }
+        const inspector::Entity* end=nullptr;gp_Pnt interior;
+        for(const auto& e:component.entities) if(e.kind==inspector::Kind::Face) {
+            GProp_GProps props;BRepGProp::SurfaceProperties(e.display,props);
+            const auto p=props.CentreOfMass();
+            if(std::abs(p.Z()-endZ)<1e-7) {end=&e;interior=p;break;}
+        }
+        check(end!=nullptr && v.select(end->id),"B end face selected before unsafe cube snap");
+        double xmin=std::numeric_limits<double>::max(),ymin=xmin;
+        double xmax=std::numeric_limits<double>::lowest(),ymax=xmax;
+        for(TopExp_Explorer it(end->display,TopAbs_VERTEX);it.More();it.Next()) {
+            const auto p=BRep_Tool::Pnt(TopoDS::Vertex(it.Current()));
+            xmin=std::min(xmin,p.X());xmax=std::max(xmax,p.X());
+            ymin=std::min(ymin,p.Y());ymax=std::max(ymax,p.Y());
+        }
+        // Avoid the passive origin arrows projected onto the face centre.
+        interior=gp_Pnt(xmin+0.75*(xmax-xmin),ymin+0.75*(ymax-ymin),endZ);
+        check(BRepClass_FaceClassifier(TopoDS::Face(end->display),interior,1e-7).State()==TopAbs_IN,"B end framebuffer probe is strictly interior");
+        const auto owner=NavigationProbe::owner(v);
+        const auto callback=v.selectionChanged;int notifications=0;
+        v.selectionChanged=[&](const std::string&) {++notifications;};
+        v.orient(orientation);
+        const auto after=v.camera();
+        double nearest=std::numeric_limits<double>::max();
+        for(TopExp_Explorer it(component.display,TopAbs_VERTEX);it.More();it.Next())
+            nearest=std::min(nearest,gp_Vec(after->Eye(),BRep_Tool::Pnt(TopoDS::Vertex(it.Current()))).Dot(gp_Vec(after->Direction())));
+        check(after->Distance()>before->Distance() && nearest>after->ZNear() && nearest>0,"cube snap retreats outside foreground before near clipping");
+        check(after->Center().Distance(before->Center())<1e-8 && !after->IsOrthographic(),"cube snap keeps target and Perspective");
+        direction(v,int(orientation));
+        check(v.selectedId()==end->id && NavigationProbe::owner(v)==owner && notifications==0,"unsafe cube snap preserves exact owner without notification");
+        const auto point=v.project(interior);
+        check(v.pick(point.x(),point.y())==end->id,"retreated B end face visible and pickable");
+        scaleBarChecks(v,orientation==V3d_Zpos?"top-retreat":"bottom-retreat");
+        const auto imagePath=std::filesystem::temp_directory_path()/(orientation==V3d_Zpos?"geo-vis-scale-top-retreat.png":"geo-vis-scale-bottom-retreat.png");
+        const QImage image(QString::fromStdString(imagePath.string()));
+        const auto colour=image.pixelColor(point);
+        check(colour.red()>colour.blue()+30 && colour.green()>colour.blue()+30,"retreated selected B end has visible amber framebuffer fill");
+        for(TopExp_Explorer it(end->display,TopAbs_VERTEX);it.More();it.Next()) {
+            const auto p=v.project(BRep_Tool::Pnt(TopoDS::Vertex(it.Current())));
+            check(p.x()>0 && p.y()>0 && p.x()<image.width() && p.y()<image.height(),"retreated B end boundary stays inside viewport");
+        }
+        const auto safe=v.camera();v.orient(V3d_Xpos);
+        check(v.camera()->Distance()==safe->Distance() && v.camera()->Scale()==safe->Scale(),"safe Perspective cube snap retains eye distance and scale");
+        v.selectionChanged=callback;
+        std::cout<<(orientation==V3d_Zpos?"Top":"Bottom")<<" B side-P-snap: distance "<<before->Distance()<<" -> "<<after->Distance()<<", nearest depth "<<nearest<<'\n';
+    }
+    v.resetCamera();v.showDisplay(nullptr);
+    std::cout<<"PASS — combined B end-on Orthographic Fit, side without Fit, P, Top/Bottom snap clearance\n";
+}
 void cameraMappingChecks() {
     std::set<std::array<int,3>> directions;
     int count=0;
@@ -139,6 +275,7 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
     std::string selected;
     for(const auto& c:display.components) for(const auto& e:c.entities) if(e.kind==inspector::Kind::Face) { selected=e.id;break; }
     v.setPickMode(inspector::Kind::Face);check(v.select(selected),"selected camera-test face");
+    const auto selectedOwner=inspector::NavigationProbe::owner(v);
     // Compare actual render pixels rather than only checking detection metadata.
     const auto imagePath=std::filesystem::temp_directory_path()/"geo-vis-camera-cube-idle.png";
     QEvent leave(QEvent::Leave);QApplication::sendEvent(&v,&leave);
@@ -200,7 +337,7 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
                 direction(v,target);
                 const auto after=v.camera();
                 check(after->Center().Distance(before->Center())<1e-8 && std::abs(after->Scale()-before->Scale())<1e-8,"cube keeps target and scale");
-                check(v.perspective()==(projection==1) && v.selectedId()==selected && selections==0,"cube preserves projection and selected model without callback");
+                check(v.perspective()==(projection==1) && v.selectedId()==selected && inspector::NavigationProbe::owner(v)==selectedOwner && selections==0,"cube preserves projection and exact selected owner without callback");
                 clicked.insert(target);
             }
         }
@@ -230,11 +367,42 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
         const auto before=v.camera();
         v.pick(8,qRound(v.height()*v.devicePixelRatioF())-8);
         check(v.selectedId()==selected && selections==0,"cube padding never deselects/picks the model");
-        // A cube drag is deliberately a no-op, rather than orbiting the shape.
+        // Compare cube and ordinary viewport orbit from identical cameras.
+        const auto owner=inspector::NavigationProbe::owner(v);
+        const double ratio=v.devicePixelRatioF();
+        const QPoint delta(qRound(25*ratio),qRound(10*ratio));
         mouse(v,QEvent::MouseButtonPress,end,Qt::LeftButton,Qt::LeftButton);
-        mouse(v,QEvent::MouseMove,end+QPoint(25,10),Qt::NoButton,Qt::LeftButton);
-        mouse(v,QEvent::MouseButtonRelease,end+QPoint(25,10),Qt::LeftButton,Qt::NoButton);
-        check(before->Direction().IsEqual(v.camera()->Direction(),1e-12),"cube dragging disabled");
+        check(QWidget::mouseGrabber()==&v,"cube gesture captures pointer");
+        mouse(v,QEvent::MouseMove,end+delta,Qt::NoButton,Qt::LeftButton);
+        const auto cubeOrbit=v.camera();
+        mouse(v,QEvent::MouseButtonRelease,end+delta,Qt::LeftButton,Qt::NoButton);
+        check(!before->Direction().IsEqual(cubeOrbit->Direction(),1e-6) && cubeOrbit->Direction().IsEqual(v.camera()->Direction(),1e-12),"cube drag orbits without release snap");
+        inspector::NavigationProbe::view(v)->Camera()->Copy(before);v.redraw();
+        mouse(v,QEvent::MouseButtonPress,start,Qt::LeftButton,Qt::LeftButton);
+        mouse(v,QEvent::MouseMove,start+delta,Qt::NoButton,Qt::LeftButton);
+        mouse(v,QEvent::MouseButtonRelease,start+delta,Qt::LeftButton,Qt::NoButton);
+        check(cubeOrbit->Direction().IsEqual(v.camera()->Direction(),1e-12) && cubeOrbit->Up().IsEqual(v.camera()->Up(),1e-12),"cube drag has same sense and amount as viewport orbit");
+        const QPoint outside(qRound((v.width()+30)*ratio),qRound((v.height()+30)*ratio));
+        mouse(v,QEvent::MouseButtonPress,end,Qt::LeftButton,Qt::LeftButton);
+        mouse(v,QEvent::MouseMove,outside,Qt::NoButton,Qt::LeftButton);
+        const auto outsideCamera=v.camera();
+        mouse(v,QEvent::MouseButtonRelease,outside,Qt::LeftButton,Qt::NoButton);
+        check(QWidget::mouseGrabber()!=&v && outsideCamera->Direction().IsEqual(v.camera()->Direction(),1e-12),"release outside viewport ends grab without snap");
+        check(v.selectedId()==selected && inspector::NavigationProbe::owner(v)==owner && selections==0 && v.perspective()==(projection==1),"cube drags retain exact selected owner and projection");
+        v.orient(V3d_XposYnegZpos);
+        const auto clickDirection=v.cubeDirectionAt(end.x(),end.y());
+        check(clickDirection.has_value(),"short-click cube target");
+        mouse(v,QEvent::MouseButtonPress,end,Qt::LeftButton,Qt::LeftButton);
+        mouse(v,QEvent::MouseMove,end+QPoint(qRound(ratio),qRound(ratio)),Qt::NoButton,Qt::LeftButton);
+        mouse(v,QEvent::MouseButtonRelease,end,Qt::LeftButton,Qt::NoButton);
+        direction(v,int(*clickDirection));
+        v.orient(V3d_XposYnegZpos);
+        mouse(v,QEvent::MouseButtonPress,end,Qt::LeftButton,Qt::LeftButton);
+        mouse(v,QEvent::MouseMove,end+delta,Qt::NoButton,Qt::LeftButton);
+        mouse(v,QEvent::MouseMove,end,Qt::NoButton,Qt::LeftButton);
+        const auto returned=v.camera();
+        mouse(v,QEvent::MouseButtonRelease,end,Qt::LeftButton,Qt::NoButton);
+        check(returned->Direction().IsEqual(v.camera()->Direction(),1e-12) && v.selectedId()==selected && selections==0,"drag returning to tile stays a drag without snap or pick");
         v.orient(V3d_XposYnegZpos);v.fit();
         check(v.camera()->Center().Distance(fitted->Center())<1e-7 && std::abs(v.camera()->Scale()-fitted->Scale())<1e-7,"screen cube excluded from Fit bounds");
         v.toggleProjection();
@@ -256,6 +424,14 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
     v.pick(0,0);check(v.selectedId().empty() && selections==1,"normal background picking outside cube");
     v.selectionChanged=callback;
     endProjectionChecks(v,display);
+    v.resetCamera();scaleBarChecks(v,"orthographic-fit");
+    const QPointF wheelPoint(v.width()/2.,v.height()/2.);
+    QWheelEvent wheel(wheelPoint,QPointF(v.mapToGlobal(wheelPoint.toPoint())),QPoint(),QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+    QApplication::sendEvent(&v,&wheel);scaleBarChecks(v,"orthographic-zoom");
+    v.toggleProjection();scaleBarChecks(v,"perspective");
+    v.resize(1000,650);QApplication::processEvents();v.redraw();scaleBarChecks(v,"perspective-resize");
+    v.resize(900,800);QApplication::processEvents();
+    passiveScaleChecks(v,display);
     v.resetCamera();
     v.showDisplay(nullptr);
     check(v.error().empty(),"camera viewport error");
