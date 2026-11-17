@@ -74,7 +74,12 @@ void Viewport::initialize() {
     if(!viewer->InsertLayerAfter(contextOverlayLayer_,contextSettings,Graphic3d_ZLayerId_Default))
         throw std::runtime_error("Cannot create contextual overlay layer");
     contextSettings.SetName("Selected bounded face");
-    if(!viewer->InsertLayerAfter(selectionLayer_,contextSettings,contextOverlayLayer_))
+    auto selectionSettings=contextSettings;
+    selectionSettings.SetEnableDepthTest(style_==DisplayStyle::Shaded);
+    // Test against opaque foreground depth, but keep a visible face's fill
+    // just ahead of its coincident surface without moving any geometry.
+    selectionSettings.SetDepthOffsetNegative();
+    if(!viewer->InsertLayerAfter(selectionLayer_,selectionSettings,contextOverlayLayer_))
         throw std::runtime_error("Cannot create selected-face layer");
     contextSettings.SetName("Source-local origin overlay");
     // OCCT batches transparent groups until the end of the normal pass. An
@@ -117,6 +122,12 @@ void Viewport::applyStyle(const occ::handle<AIS_Shape>& ais) {
 void Viewport::setDisplayStyle(DisplayStyle style) {
     style_=style;
     guard([&] {
+        if(!context_.IsNull()) {
+            const auto viewer=context_->CurrentViewer();
+            auto settings=viewer->ZLayerSettings(selectionLayer_);
+            settings.SetEnableDepthTest(style_==DisplayStyle::Shaded);
+            viewer->SetZLayerSettings(selectionLayer_,settings);
+        }
         for(const auto& object:objects_) applyStyle(object.ais);
         redraw();
     });

@@ -186,6 +186,67 @@ void boundedHighlightChecks(Viewport& v) {
     v.showDisplay(nullptr);check(ViewportProbe::highlight(v).IsNull(),"representation change removes stale face fill");
     std::cout<<"PASS — bounded translucent highlight, inner wire/recess, bright boundary and unselected Wireframe negative control\n";
 }
+void hiddenFaceHighlightChecks(Viewport& v) {
+    // Synthetic display copies only. Two separate faces exactly overlap in
+    // screen space; no source specimen or geometry-pipeline behavior is added.
+    auto square=[](double z) {
+        BRepBuilderAPI_MakePolygon loop;
+        for(const auto& p:{gp_Pnt(-100,-100,z),gp_Pnt(100,-100,z),gp_Pnt(100,100,z),gp_Pnt(-100,100,z)}) loop.Add(p);
+        loop.Close();return BRepBuilderAPI_MakeFace(loop.Wire()).Face();
+    };
+    const auto front=square(20),rear=square(-20);
+    TopoDS_Compound compound;BRep_Builder builder;builder.MakeCompound(compound);builder.Add(compound,front);builder.Add(compound,rear);
+    Component component;component.id="overlap";component.display=compound;
+    Entity e;e.kind=Kind::Face;e.id="overlap/front";e.display=front;component.entities.push_back(e);
+    e.id="overlap/rear";e.display=rear;component.entities.push_back(e);
+    inspector::Display display{Representation::Faces,{component},{}};
+    v.setShowContext(false);v.setDisplayStyle(DisplayStyle::Shaded);v.showDisplay(&display);
+    v.resetCamera();v.orient(V3d_Zpos);v.fit();v.setPickMode(Kind::Face);
+    const auto camera=v.camera();
+    const auto interior=v.project(gp_Pnt(55,50,-20)); // Away from edges and origin arrows.
+    const auto opaque=capture(v,"overlap-unselected");
+    check(opaque.pixel(interior)!=opaque.pixel(0,0),"overlap regression samples the opaque front interior");
+    // Window::select uses setPickMode + this same public selection path when a
+    // tree row is invoked. Picking cannot select the hidden rear face here.
+    check(v.select("overlap/rear"),"hidden rear face selected through tree-to-viewport path");
+    const auto owner=ViewportProbe::owner(v);
+    const auto fill=ViewportProbe::highlight(v);
+    int notifications=0;v.selectionChanged=[&](const auto&) {++notifications;};
+    for(const auto style:{DisplayStyle::Shaded,DisplayStyle::Transparent,DisplayStyle::Wireframe,DisplayStyle::Shaded}) {
+        v.setDisplayStyle(style);passive(v);
+        const auto image=capture(v,"overlap-selected-"+std::to_string(int(style)));
+        for(int dy=-3;dy<=3;++dy) for(int dx=-3;dx<=3;++dx) {
+            const auto point=interior+QPoint(dx,dy);
+            if(style==DisplayStyle::Shaded) check(image.pixel(point)==opaque.pixel(point),"hidden rear fill must not tint the opaque front interior");
+            else {const auto color=image.pixelColor(point);check(color.red()>color.blue()+30 && color.green()>color.blue()+30,"Transparent/Wireframe retain hidden-face amber overlay");}
+        }
+        check(v.selectedId()=="overlap/rear" && ViewportProbe::owner(v)==owner && ViewportProbe::highlight(v)==fill &&
+              ViewportProbe::kind(v)==Kind::Face && notifications==0 && sameCamera(camera,v.camera()),"hidden selection/style changes preserve actual owner, fill, mode and camera");
+    }
+    // Expose that same selected face, without selecting it again. Repeated
+    // captures and nearby oblique views check stable coincident-surface fill.
+    for(const auto direction:{V3d_Zneg,V3d_XposYnegZneg,V3d_Zneg}) {
+        v.orient(direction);
+        const auto point=v.project(gp_Pnt(55,50,-20));
+        const auto image=capture(v,"overlap-exposed-"+std::to_string(int(direction)));
+        for(int dy=-3;dy<=3;++dy) for(int dx=-3;dx<=3;++dx) {
+            const auto color=image.pixelColor(point+QPoint(dx,dy));
+            check(color.red()>color.blue()+30 && color.green()>color.blue()+30,"exposed rear face has stable amber interior");
+        }
+        const auto edge=v.project(gp_Pnt(100,50,-20));
+        bool bright=false;
+        for(int dy=-3;dy<=3;++dy) for(int dx=-3;dx<=3;++dx) {
+            const auto c=image.pixelColor(edge+QPoint(dx,dy));bright|=c.red()>230 && c.green()>220 && c.blue()<100;
+        }
+        check(bright,"exposed rear face has bright boundary");
+        const auto repeated=capture(v,"overlap-exposed-repeat");
+        for(int dy=-3;dy<=3;++dy) for(int dx=-3;dx<=3;++dx)
+            check(image.pixel(point+QPoint(dx,dy))==repeated.pixel(point+QPoint(dx,dy)),"coincident fill stable across redraws");
+        check(v.selectedId()=="overlap/rear" && ViewportProbe::owner(v)==owner && ViewportProbe::highlight(v)==fill && notifications==0,"view snap exposes existing rear selection without reselecting");
+    }
+    v.selectionChanged={};v.showDisplay(nullptr);
+    std::cout<<"PASS — hidden rear fill occluded in Shaded, exposed without reselecting, overlay styles and coincident fill retained\n";
+}
 void representationClearanceChecks(Viewport& v,const Document& document) {
     v.setDisplayStyle(DisplayStyle::Shaded);
     auto b=prepareDisplay(document,Representation::Candidate);
@@ -427,6 +488,7 @@ void displayRenderChecks(inspector::Viewport& v,const inspector::Document& docum
     ViewportProbe::view(v)->Pan(5000,0);v.redraw();
     check(markerPixels(v,"origin-offscreen").isEmpty(),"origin may leave view without recentering");
     boundedHighlightChecks(v);
+    hiddenFaceHighlightChecks(v);
     representationClearanceChecks(v,document);
     v.setShowContext(true);v.setDisplayStyle(DisplayStyle::Shaded);v.showDisplay(nullptr);
     check(v.error().empty(),v.error());
