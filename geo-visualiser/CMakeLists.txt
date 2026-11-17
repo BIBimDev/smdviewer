@@ -16,7 +16,7 @@ target_link_libraries(smd-inspector-adapter PUBLIC smd-geometry PRIVATE Qt6::Cor
 target_include_directories(smd-inspector-adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(smd-inspector-adapter PUBLIC cxx_std_20)
 
-add_library(smd-inspector-desktop STATIC viewport.cpp view_cube.cpp origin_marker.cpp window.cpp)
+add_library(smd-inspector-desktop STATIC viewport.cpp view_cube.cpp origin_marker.cpp decorations.cpp window.cpp)
 target_link_libraries(smd-inspector-desktop PUBLIC smd-inspector-adapter Qt6::Widgets TKV3d TKOpenGl TKService TKMesh)
 if(UNIX)
     target_link_libraries(smd-inspector-desktop PRIVATE X11::X11)

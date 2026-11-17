@@ -10,8 +10,7 @@ OriginMarker::OriginMarker() {
     SetInfiniteState(true);
     SetAutoHilight(false);
     SetTransformPersistence(new Graphic3d_TransformPers(Graphic3d_TMF_ZoomPers,gp_Pnt(0,0,0)));
-    // Default depth-tested model layer, never an always-on-top overlay.
-    SetZLayer(Graphic3d_ZLayerId_Default);
+    // Viewport assigns a depth-independent layer after the selected-face fill.
 }
 void OriginMarker::setPixelRatio(double ratio) { pixelRatio_=ratio; SetToUpdate(); }
 void OriginMarker::Compute(const occ::handle<PrsMgr_PresentationManager>&,

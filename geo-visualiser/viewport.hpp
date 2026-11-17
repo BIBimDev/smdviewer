@@ -2,6 +2,8 @@
 #include "model.hpp"
 #include "view_cube.hpp"
 #include "origin_marker.hpp"
+#include "decorations.hpp"
+#include "appearance.hpp"
 #include <QWidget>
 #include <AIS_InteractiveContext.hxx>
 #include <AIS_Shape.hxx>
@@ -56,6 +58,7 @@ private:
     void populate(bool refit);
     void applyStyle(const occ::handle<AIS_Shape>&);
     void populateContext();
+    void updateFaceHighlight();
     void activate();
     void backOffPerspectiveEye();
     Bnd_Box foregroundBounds() const;
@@ -71,13 +74,17 @@ private:
     Kind kind_ = Kind::Face;
     DisplayStyle style_ = DisplayStyle::Shaded;
     bool showContext_ = true;
+    Palette palette_=factoryPalette;
     occ::handle<AIS_InteractiveContext> context_;
     occ::handle<V3d_View> view_;
     occ::handle<ViewCube> cube_;
     occ::handle<OriginMarker> origin_;
+    occ::handle<FaceHighlight> faceHighlight_;
     Graphic3d_ZLayerId contextLayer_ = Graphic3d_ZLayerId_UNKNOWN;
     Graphic3d_ZLayerId contextOverlayLayer_ = Graphic3d_ZLayerId_UNKNOWN;
-    std::vector<occ::handle<AIS_Shape>> contextObjects_;
+    Graphic3d_ZLayerId selectionLayer_ = Graphic3d_ZLayerId_UNKNOWN;
+    Graphic3d_ZLayerId originLayer_ = Graphic3d_ZLayerId_UNKNOWN;
+    std::vector<occ::handle<ContextOutline>> contextObjects_;
     std::vector<Object> objects_;
     QPoint press_, previous_;
     QSize nativeSize_;

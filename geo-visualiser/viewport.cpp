@@ -69,10 +69,19 @@ void Viewport::initialize() {
     contextSettings.SetRenderInDepthPrepass(false);
     if(!viewer->InsertLayerBefore(contextLayer_,contextSettings,Graphic3d_ZLayerId_Default))
         throw std::runtime_error("Cannot create contextual outline layer");
-    contextSettings.SetName("Partial-body faint overlay outlines");
+    contextSettings.SetName("Partial-body overlay outlines");
     contextSettings.SetEnableDepthTest(false);
     if(!viewer->InsertLayerAfter(contextOverlayLayer_,contextSettings,Graphic3d_ZLayerId_Default))
         throw std::runtime_error("Cannot create contextual overlay layer");
+    contextSettings.SetName("Selected bounded face");
+    if(!viewer->InsertLayerAfter(selectionLayer_,contextSettings,contextOverlayLayer_))
+        throw std::runtime_error("Cannot create selected-face layer");
+    contextSettings.SetName("Source-local origin overlay");
+    // OCCT batches transparent groups until the end of the normal pass. An
+    // immediate layer keeps the arrows above that fill without clearing depth.
+    contextSettings.SetImmediate(true);
+    if(!viewer->InsertLayerAfter(originLayer_,contextSettings,selectionLayer_))
+        throw std::runtime_error("Cannot create origin overlay layer");
     context_ = new AIS_InteractiveContext(viewer);
     context_->SetAutoActivateSelection(false);
     context_->HighlightStyle(Prs3d_TypeOfHighlight_LocalSelected)->SetColor(Quantity_NOC_YELLOW);
@@ -93,6 +102,7 @@ void Viewport::initialize() {
     cube_ = new ViewCube();
     cube_->setPixelRatio(devicePixelRatioF());
     origin_ = new OriginMarker();
+    origin_->SetZLayer(originLayer_);
     origin_->setPixelRatio(devicePixelRatioF());
     populate(true);
 }
@@ -102,7 +112,7 @@ int Viewport::mode() const {
 }
 void Viewport::applyStyle(const occ::handle<AIS_Shape>& ais) {
     context_->SetDisplayMode(ais,style_==DisplayStyle::Wireframe?AIS_WireFrame:AIS_Shaded,false);
-    context_->SetTransparency(ais,style_==DisplayStyle::Transparent?0.72:0.0,false);
+    context_->SetTransparency(ais,style_==DisplayStyle::Transparent?factoryTransparency:0.0,false);
 }
 void Viewport::setDisplayStyle(DisplayStyle style) {
     style_=style;
@@ -116,19 +126,7 @@ void Viewport::populateContext() {
     contextObjects_.clear();
     if(!showContext_ || !display_) return;
     for(const auto& outline:display_->context) {
-        occ::handle<AIS_Shape> ais=new AIS_Shape(outline.shape);
-        const Quantity_Color color=outline.representation==Representation::Reductions?
-            Quantity_Color(0.28,0.21,0.24,Quantity_TOC_RGB):Quantity_Color(0.24,0.27,0.31,Quantity_TOC_RGB);
-        ais->SetColor(color);
-        ais->Attributes()->SetWireAspect(new Prs3d_LineAspect(color,Aspect_TOL_DASH,1));
-        ais->Attributes()->SetUnFreeBoundaryAspect(new Prs3d_LineAspect(color,Aspect_TOL_DASH,1));
-        ais->Attributes()->SetFreeBoundaryAspect(new Prs3d_LineAspect(color,Aspect_TOL_DASH,1));
-        ais->Attributes()->SetIsoOnPlane(false);
-        ais->Attributes()->UIsoAspect()->SetNumber(0);
-        ais->Attributes()->VIsoAspect()->SetNumber(0);
-        ais->SetInfiniteState(true); // Defensive exclusion from scene framing.
-        ais->SetDisplayMode(AIS_WireFrame);
-        ais->SetAutoHilight(false);
+        occ::handle<ContextOutline> ais=new ContextOutline(outline.shape,outline.representation==Representation::Reductions);
         // B/A need outlines through their opaque foreground to reveal contained
         // reductions. In R, keep context behind the pocket's filled foreground.
         ais->SetZLayer(display_->representation==Representation::Reductions?contextLayer_:contextOverlayLayer_);
@@ -144,24 +142,23 @@ void Viewport::setShowContext(bool show) {
 void Viewport::populate(bool refit) {
     if(context_.IsNull()) return;
     context_->RemoveAll(false); // Removal also removes hidden selection owners.
+    faceHighlight_.Nullify();
     objects_.clear();
     contextObjects_.clear();
     if(display_) for(std::size_t i=0; i<display_->components.size(); ++i) {
         if(isolated_ >= 0 && i != static_cast<std::size_t>(isolated_)) continue;
         const auto& c = display_->components[i];
         occ::handle<AIS_Shape> ais = new AIS_Shape(c.display);
-        ais->SetColor(display_->representation == Representation::Reductions ? Quantity_Color(0.72,0.52,0.53,Quantity_TOC_RGB) :
-                      display_->representation == Representation::Extensions ? Quantity_Color(0.32,0.34,0.36,Quantity_TOC_RGB) :
-                      display_->representation == Representation::Candidate ? Quantity_Color(0.57,0.59,0.61,Quantity_TOC_RGB) :
-                      Quantity_Color(0.60,0.72,0.85,Quantity_TOC_RGB));
+        ais->SetColor(palette_.surface(display_->representation));
         ais->Attributes()->SetFaceBoundaryDraw(true);
         ais->Attributes()->SetFaceBoundaryAspect(new Prs3d_LineAspect(Quantity_NOC_BLACK, Aspect_TOL_SOLID, 1.0));
         ais->Attributes()->SetIsoOnPlane(false);
         ais->Attributes()->UIsoAspect()->SetNumber(0);
         ais->Attributes()->VIsoAspect()->SetNumber(0);
-        ais->Attributes()->SetWireAspect(new Prs3d_LineAspect(Quantity_NOC_GRAY80,Aspect_TOL_SOLID,1));
-        ais->Attributes()->SetUnFreeBoundaryAspect(new Prs3d_LineAspect(Quantity_NOC_GRAY80,Aspect_TOL_SOLID,1));
-        ais->Attributes()->SetFreeBoundaryAspect(new Prs3d_LineAspect(Quantity_NOC_GRAY80,Aspect_TOL_SOLID,1));
+        const auto wire=palette_.wire(display_->representation);
+        ais->Attributes()->SetWireAspect(new Prs3d_LineAspect(wire,Aspect_TOL_SOLID,1));
+        ais->Attributes()->SetUnFreeBoundaryAspect(new Prs3d_LineAspect(wire,Aspect_TOL_SOLID,1));
+        ais->Attributes()->SetFreeBoundaryAspect(new Prs3d_LineAspect(wire,Aspect_TOL_SOLID,1));
         context_->Display(ais, AIS_Shaded, -1, false);
         applyStyle(ais);
         // Display(...,-1) deliberately skips registration with the selector.
@@ -175,7 +172,10 @@ void Viewport::populate(bool refit) {
     context_->Activate(cube_,0);
     activate();
     if(refit) fit();
-    else fitDepth();
+    else {
+        if(perspective()) backOffPerspectiveEye();
+        fitDepth();
+    }
     view_->Redraw();
 }
 void Viewport::showDisplay(const Display* display, int isolated, bool refit) {
@@ -186,6 +186,7 @@ void Viewport::showDisplay(const Display* display, int isolated, bool refit) {
 void Viewport::activate() {
     if(context_.IsNull()) return;
     context_->ClearSelected(false);
+    updateFaceHighlight();
     context_->ClearDetected(false);
     for(const auto& o : objects_) {
         context_->Deactivate(o.ais);
@@ -210,6 +211,17 @@ std::string Viewport::selectedId() const {
     context_->InitSelected();
     return context_->MoreSelected() ? ownerId(context_->SelectedOwner()) : std::string{};
 }
+void Viewport::updateFaceHighlight() {
+    if(!faceHighlight_.IsNull()) context_->Remove(faceHighlight_,false);
+    faceHighlight_.Nullify();
+    context_->InitSelected();
+    if(kind_!=Kind::Face || !context_->MoreSelected()) return;
+    const auto owner=occ::down_cast<StdSelect_BRepOwner>(context_->SelectedOwner());
+    if(owner.IsNull() || !owner->HasShape() || ownerId(owner).empty()) return;
+    faceHighlight_=new FaceHighlight(owner->Shape());
+    faceHighlight_->SetZLayer(selectionLayer_);
+    context_->Display(faceHighlight_,0,-1,false);
+}
 bool Viewport::select(const std::string& id) {
     bool found = false;
     guard([&] {
@@ -227,6 +239,7 @@ bool Viewport::select(const std::string& id) {
             }
             if(found) break;
         }
+        updateFaceHighlight();
         redraw();
     });
     return found;
@@ -248,6 +261,7 @@ std::string Viewport::pick(int x, int y) {
         if(context_->HasDetected()) id = ownerId(context_->DetectedOwner());
         if(id.empty()) context_->ClearSelected(false);
         else context_->SelectDetected(AIS_SelectionScheme_Replace);
+        updateFaceHighlight();
         redraw();
     });
     // A navigation click never synchronizes/clears the inspector selection.

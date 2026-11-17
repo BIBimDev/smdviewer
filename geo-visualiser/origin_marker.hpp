@@ -2,7 +2,7 @@
 #include <AIS_InteractiveObject.hxx>
 
 namespace inspector {
-// World-anchored, depth-tested decoration. Pixel lengths are presentation units,
+// World-anchored overlay decoration. Pixel lengths are presentation units,
 // never source millimetres; no sensitive entities or selection modes are built.
 class OriginMarker : public AIS_InteractiveObject {
 public:
