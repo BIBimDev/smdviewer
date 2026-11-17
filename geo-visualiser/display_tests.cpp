@@ -1,6 +1,12 @@
 #include "display_tests.hpp"
 #include <QApplication>
 #include <QImage>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QThread>
+#include <QWindow>
+#include <Image_PixMap.hxx>
+#include <V3d_ImageDumpOptions.hxx>
 #include <BRepGProp.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRep_Tool.hxx>
@@ -58,8 +64,49 @@ bool sameCamera(const auto& a,const auto& b,bool includeClipping=true) {
         <<", scale "<<a->Scale()<<" -> "<<b->Scale()<<", clip "<<a->ZNear()<<","<<a->ZFar()<<" -> "<<b->ZNear()<<","<<b->ZFar()<<'\n';
     return same;
 }
-QImage capture(Viewport& v,const std::string& suffix) {
+QSize drawableSize(Viewport& v) {
+    int width=0,height=0;ViewportProbe::view(v)->Window()->Size(width,height);
+    return {width,height};
+}
+void settleDrawable(Viewport& v) {
+    QElapsedTimer deadline;deadline.start();
+    QSize previous;int stable=0;
+    auto camera=v.camera();
+    // A single processEvents() need not finish native-window creation/resize.
+    // Wait for exposure and repeated positive sizes, servicing Qt between them.
+    while(deadline.elapsed()<5000) {
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        v.redraw();
+        const auto size=drawableSize(v);
+        if(v.windowHandle() && v.windowHandle()->isExposed() && size.width()>0 && size.height()>0 &&
+           size==previous && sameCamera(camera,v.camera()) && camera->Aspect()==v.camera()->Aspect()) {
+            if(++stable==3) return;
+        } else stable=0;
+        previous=size;camera=v.camera();QThread::msleep(20);
+    }
+    std::cerr<<"Unsettled drawable="<<previous.width()<<'x'<<previous.height()<<" DPR="<<v.devicePixelRatioF()<<'\n';
+    check(false,"native specimen drawable did not settle");
+}
+QImage capture(Viewport& v,const std::string& suffix,bool native=false) {
     const auto path=std::filesystem::temp_directory_path()/("geo-vis-display-"+suffix+".png");
+    if(native) {
+        // Viewport::project uses OCCT's native drawable. At fractional Windows
+        // scaling it can differ by a pixel from rounded Qt logical size * DPR.
+        // Capture that exact drawable with the same camera, without aspect adjustment.
+        const auto size=drawableSize(v);
+        check(size.width()>0 && size.height()>0,"positive native capture dimensions");
+        V3d_ImageDumpOptions options;options.Width=size.width();options.Height=size.height();
+        options.ToAdjustAspect=false;
+        Image_PixMap pixels;
+        check(ViewportProbe::view(v)->ToPixMap(pixels,options),"native capture "+suffix);
+        QImage image(int(pixels.SizeX()),int(pixels.SizeY()),QImage::Format_RGB32);
+        for(int y=0;y<image.height();++y) for(int x=0;x<image.width();++x) {
+            const auto color=pixels.PixelColor(x,y).GetRGB();
+            image.setPixelColor(x,y,QColor::fromRgbF(color.Red(),color.Green(),color.Blue()));
+        }
+        check(image.save(QString::fromStdString(path.string())),"save native capture "+suffix);
+        return image;
+    }
     check(v.capture(path.string()),"capture "+suffix);
     return QImage(QString::fromStdString(path.string()));
 }
@@ -119,23 +166,42 @@ void passive(Viewport& v) {
     check(!overlay.ToEnableDepthTest() && !overlay.ToEnableDepthWrite() && !overlay.ToClearDepth(),"B/A outlines reveal contained reductions without writing depth");
 }
 void specimenHighlightChecks(Viewport& v,const inspector::Display& display) {
+    settleDrawable(v);
     v.orient(V3d_Yneg);v.fit();v.setPickMode(Kind::Face);
-    QPoint point;std::string id;
+    const auto size=drawableSize(v);
+    const auto camera=v.camera();
+    QPoint point;gp_Pnt interior;std::string id;
     for(const auto& c:display.components) for(const auto& e:c.entities) if(e.kind==Kind::Face) {
         BRepAdaptor_Surface surface(TopoDS::Face(e.display));
         if(surface.GetType()!=GeomAbs_Plane || std::abs(surface.Plane().Axis().Direction().Y())<0.99) continue;
         GProp_GProps props;BRepGProp::SurfaceProperties(e.display,props);
-        point=v.project(props.CentreOfMass());id=v.pick(point.x(),point.y());
+        interior=props.CentreOfMass();
+        point=v.project(interior);
+        std::cerr<<"Specimen projection: drawable="<<size.width()<<'x'<<size.height()
+                 <<" DPR="<<v.devicePixelRatioF()<<" point="<<point.x()<<','<<point.y()
+                 <<" candidate="<<e.id<<'\n';
+        check(QRect(QPoint(0,0),size).contains(point),"specimen interior projects inside settled drawable");
+        id=v.pick(point.x(),point.y());
         if(!id.empty()) break;
     }
     check(!id.empty(),"specimen front-face interior selectable");
     for(const auto style:{DisplayStyle::Shaded,DisplayStyle::Transparent,DisplayStyle::Wireframe}) {
         v.setDisplayStyle(style);v.select("");ViewportProbe::context(v)->ClearDetected(false);
-        const auto before=capture(v,"specimen-before-"+std::to_string(int(style)));
+        const auto before=capture(v,"specimen-before-"+std::to_string(int(style)),true);
         check(v.select(id),"inspector-style selection of actual specimen face");
         const auto owner=ViewportProbe::owner(v);
         const auto fill=ViewportProbe::highlight(v);
-        const auto image=capture(v,"specimen-selected-"+std::to_string(int(style)));
+        const auto image=capture(v,"specimen-selected-"+std::to_string(int(style)),true);
+        const auto currentSize=drawableSize(v);
+        const auto projected=v.project(interior);
+        std::cerr<<"Specimen probe: drawable="<<currentSize.width()<<'x'<<currentSize.height()
+                 <<" image="<<image.width()<<'x'<<image.height()<<" DPR="<<v.devicePixelRatioF()
+                 <<" point="<<point.x()<<','<<point.y()<<" current="<<projected.x()<<','<<projected.y()
+                 <<" selected="<<v.selectedId()<<" style="<<int(style)<<'\n';
+        check(currentSize==size && image.size()==size && before.size()==size &&
+              sameCamera(camera,v.camera()) && camera->Aspect()==v.camera()->Aspect() && projected==point,
+              "specimen projection and captures retain settled drawable and camera");
+        check(image.rect().contains(point) && before.rect().contains(point),"specimen probe inside both captured images");
         const auto amber=image.pixelColor(point);
         check(image.pixel(point)!=before.pixel(point) && amber.red()>amber.blue()+30 && amber.green()>amber.blue()+30,"actual specimen face interior filled amber in all styles");
         for(const auto next:{DisplayStyle::Shaded,DisplayStyle::Transparent,DisplayStyle::Wireframe}) {

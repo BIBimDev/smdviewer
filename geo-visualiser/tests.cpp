@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QFileDialog>
+#include <QDir>
 #include <QMessageBox>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -529,7 +530,11 @@ void uiChecks(const std::filesystem::path& samples) {
     };
     openFile({},true);retained();
     const auto diagnostic=openFile(copies.bad);retained();
-    require(diagnostic.contains(QString::fromStdU16String(copies.bad.u16string())) && diagnostic.contains("parseSmd10125"),"failed attempt identifies full path and stage");
+    std::cerr<<"Failed-open actual dialog: "<<diagnostic.toStdString()<<'\n'
+             <<"Failed-open expected full path: "<<QString::fromStdU16String(copies.bad.u16string()).toStdString()<<'\n';
+    const auto expectedPath=QDir::fromNativeSeparators(QString::fromStdU16String(copies.bad.u16string()));
+    require(QDir::fromNativeSeparators(diagnostic).startsWith(expectedPath+": "),"failed attempt identifies full path");
+    require(diagnostic.contains(": parseSmd10125: "),"failed attempt identifies parseSmd10125 stage");
     require(openFile(samples/fixtures[0]).isEmpty(),"combined to plain");reset();
     require(camera()==initialCamera,"plain open resets default orientation and fits new S");
     for(int representation:{3,4}) {
