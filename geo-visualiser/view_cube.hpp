@@ -23,5 +23,7 @@ public:
 protected:
     void createBoxPartTriangles(const occ::handle<Graphic3d_ArrayOfTriangles>&,
                                int&, int&, V3d_TypeOfOrientation) const override;
+private:
+    bool axesOnly_=false;
 };
 }

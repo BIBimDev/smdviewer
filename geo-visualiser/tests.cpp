@@ -17,6 +17,9 @@
 #include <QTimer>
 #include <QProcess>
 #include <QCheckBox>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QThread>
 #include <fstream>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
@@ -303,7 +306,13 @@ void uiChecks(const std::filesystem::path& samples) {
     Viewport* viewport=nullptr;
     for(auto* child:window.findChildren<QWidget*>()) if(auto* candidate=dynamic_cast<Viewport*>(child)) viewport=candidate;
     require(viewport && open && filename,"file controls and viewport exist");
-    require(!window.findChild<QComboBox*>("specimen") && reps->currentIndex()==1 && filename->text()==fixtures[0],"Open replaces dropdown; initial plain S");
+    QElapsedTimer startup;startup.start();
+    while(filename->text().isEmpty() && status->text().startsWith("Loading") && startup.elapsed()<10000) {
+        QApplication::processEvents(QEventLoop::AllEvents,50);
+        QThread::msleep(1);
+    }
+    require(!window.findChild<QComboBox*>("specimen") && reps->currentIndex()==1 && filename->text()==fixtures[0],
+            "Open replaces dropdown; initial plain S: filename="+filename->text().toStdString()+"; status="+status->text().toStdString());
     const auto sameCamera=[](const auto& a,const auto& b) {
         return a->ProjectionType()==b->ProjectionType() && a->Eye().Distance(b->Eye())==0 &&
             a->Center().Distance(b->Center())==0 && a->Direction().IsEqual(b->Direction(),0) &&
@@ -558,6 +567,7 @@ void uiChecks(const std::filesystem::path& samples) {
 }
 int main(int argc,char** argv) {
     try {
+        std::cout<<std::unitbuf;
         require(argc==2 || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--fresh-window" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera" || std::string(argv[2])=="--display")),
                 "usage: smd-inspector-tests <samples> [--render|--open|--camera|--display|--fresh-window]");
         const std::filesystem::path samples=argv[1];

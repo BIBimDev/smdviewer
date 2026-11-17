@@ -3,7 +3,17 @@
 #include <QMouseEvent>
 #include <QImage>
 #include <QEvent>
+#include <QEventLoop>
 #include <QWheelEvent>
+#include <Graphic3d_TransformPers.hxx>
+#include <Graphic3d_RenderingParams.hxx>
+#include <Graphic3d_GraphicDriver.hxx>
+#include <V3d_Viewer.hxx>
+#include <OpenGl_Group.hxx>
+#include <OpenGl_Element.hxx>
+#include <OpenGl_Workspace.hxx>
+#include <OpenGl_Context.hxx>
+#include <OpenGl_GlCore20.hxx>
 #include <SelectMgr_Selection.hxx>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
@@ -25,6 +35,7 @@ namespace inspector {
 struct NavigationProbe {
     static auto& view(Viewport& v) { return v.view_; }
     static auto& bar(Viewport& v) { return v.scaleBar_; }
+    static auto& cube(Viewport& v) { return v.cube_; }
     static auto& context(Viewport& v) { return v.context_; }
     static auto owner(Viewport& v) { v.context_->InitSelected();return v.context_->SelectedOwner(); }
 };
@@ -44,6 +55,7 @@ void mouse(inspector::Viewport& v,QEvent::Type type,QPoint physical,
     const QPointF p=QPointF(physical)/v.devicePixelRatioF();
     QMouseEvent event(type,p,QPointF(v.mapToGlobal(p.toPoint())),button,buttons,Qt::NoModifier);
     QApplication::sendEvent(&v,&event);
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 void direction(inspector::Viewport& v,int i) {
     const auto c=v.camera();
@@ -51,6 +63,113 @@ void direction(inspector::Viewport& v,int i) {
     const gp_Dir up=i==V3d_Zpos?gp::DY():i==V3d_Zneg?-gp::DY():gp::DZ();
     const auto projected=gp_Vec(up)-gp_Vec(c->Direction())*up.Dot(c->Direction());
     check(c->Up().IsEqual(gp_Dir(projected),1e-10),"predictable screen up, including top/bottom");
+}
+QPointF cubePixel(inspector::Viewport& v,const gp_Pnt& point) {
+    const auto c=v.camera();
+    auto mv=c->OrientationMatrix();
+    const int width=qRound(v.width()*v.devicePixelRatioF()),height=qRound(v.height()*v.devicePixelRatioF());
+    inspector::NavigationProbe::cube(v)->TransformPersistence()->Apply(c,c->ProjectionMatrix(),mv,width,height);
+    const auto p=c->ProjectionMatrix()*mv*NCollection_Vec4<double>(point.X(),point.Y(),point.Z(),1);
+    return {(p.x()/p.w()+1)*width/2,(1-p.y()/p.w())*height/2};
+}
+void projectedTileClicks(inspector::Viewport& v,int face,const std::string& selected,bool oblique=false) {
+    const auto normal=V3d::GetProjAxis(static_cast<V3d_TypeOfOrientation>(face));
+    const auto owner=inspector::NavigationProbe::owner(v);
+    int clicked=0;
+    for(int i=0;i<26;++i) for(const auto& tile:inspector::cubeTiles(static_cast<V3d_TypeOfOrientation>(i),inspector::NavigationProbe::cube(v)->Size()))
+        if(tile.normal.IsEqual(normal,1e-12)) {
+            v.orient(oblique?V3d_XnegYnegZpos:static_cast<V3d_TypeOfOrientation>(face));
+            const auto centre=(tile.corners[0].XYZ()+tile.corners[1].XYZ()+tile.corners[2].XYZ()+tile.corners[3].XYZ())/4;
+            const auto pixel=cubePixel(v,gp_Pnt(centre)).toPoint();
+            check(v.cubeDirectionAt(pixel.x(),pixel.y())==tile.orientation,"projected visible face/edge/corner tile centre hits its exact owner");
+            mouse(v,QEvent::MouseButtonPress,pixel,Qt::LeftButton,Qt::LeftButton);
+            mouse(v,QEvent::MouseButtonRelease,pixel,Qt::LeftButton,Qt::NoButton);
+            direction(v,i);
+            check(v.selectedId()==selected && inspector::NavigationProbe::owner(v)==owner,"projected tile clicks preserve exact model owner");
+            ++clicked;
+        }
+    check(clicked==9,"nine geometrically projected visible tiles actually clicked");
+}
+void cubeProjectionChecks(inspector::Viewport& v) {
+    using inspector::NavigationProbe;
+    v.resetCamera();v.orient(V3d_XnegYnegZpos);v.fit();
+    const double size=NavigationProbe::cube(v)->Size(),ratio=v.devicePixelRatioF();
+    const std::array<gp_Pnt,4> edge={gp_Pnt(-size/2,-size/2,size/2),gp_Pnt(size/2,-size/2,size/2),
+        gp_Pnt(-size/2,size/2,size/2),gp_Pnt(size/2,size/2,size/2)};
+    std::array<double,2> oppositeEdgeRatios{};
+    for(int projection=0;projection<2;++projection) {
+        auto& context=NavigationProbe::context(v);
+        context->ClearDetected(false);v.redraw();
+        const auto centre=cubePixel(v,gp::Origin());
+        check(std::abs(centre.x()-100*ratio)<1 && std::abs(centre.y()-(v.height()-100)*ratio)<1,"cube origin remains at its lower-left anchor");
+        const auto a=cubePixel(v,edge[0]),b=cubePixel(v,edge[1]),c=cubePixel(v,edge[2]),d=cubePixel(v,edge[3]);
+        oppositeEdgeRatios[projection]=QLineF(a,b).length()/QLineF(c,d).length();
+        const auto path=std::filesystem::temp_directory_path()/(projection?"geo-vis-refine-02-fix01-projection-P.png":"geo-vis-refine-02-fix01-projection-O.png");
+        check(v.capture(path.string()),"cube projection framebuffer");
+        const QImage image(QString::fromStdString(path.string()));
+        // Off-centre tiles avoid axis labels and antialiased grid boundaries.
+        const auto top=cubePixel(v,gp_Pnt(size/3,0,size/2)).toPoint();
+        const auto left=cubePixel(v,gp_Pnt(-size/2,0,size/3)).toPoint();
+        const auto topColour=image.pixelColor(top),leftColour=image.pixelColor(left);
+        check(std::abs(topColour.red()-leftColour.red())+std::abs(topColour.green()-leftColour.green())+
+              std::abs(topColour.blue()-leftColour.blue())>90,"adjacent Z+ and X- faces have distinct rendered tones");
+        const auto before=v.camera();
+        NavigationProbe::view(v)->SetZoom(1.7);NavigationProbe::view(v)->Pan(70,40);v.redraw();
+        check(QLineF(a,cubePixel(v,edge[0])).length()<1e-6 && QLineF(b,cubePixel(v,edge[1])).length()<1e-6,"cube position and apparent size invariant under model zoom/pan");
+        context->ClearDetected(false);
+        const auto stable=std::filesystem::temp_directory_path()/"geo-vis-refine-02-fix01-cube-stable.png";
+        check(v.capture(stable.string()),"cube pan/zoom framebuffer");
+        const QImage after(QString::fromStdString(stable.string()));
+        check(topColour==after.pixelColor(top) && leftColour==after.pixelColor(left),"cube tones remain stable under pan/zoom and model lighting");
+        NavigationProbe::view(v)->Camera()->Copy(before);v.redraw();
+        v.toggleProjection();
+    }
+    check(std::abs(oppositeEdgeRatios[0]-1)<1e-10 && std::abs(oppositeEdgeRatios[1]-1)>0.03,"O has parallel equal edges; P has visibly unequal receding edges");
+    std::cout<<"Cube opposite-edge ratios O/P: "<<oppositeEdgeRatios[0]<<" / "<<oppositeEdgeRatios[1]<<'\n';
+    v.resetCamera();
+}
+// Read the actual draw framebuffer, without altering GL state or pixels.
+class SampleRead : public OpenGl_Element {
+public:
+    explicit SampleRead(int& samples):samples_(samples) {}
+    void Render(const occ::handle<OpenGl_Workspace>& workspace) const override {
+        int count=0;workspace->GetGlContext()->core11fwd->glGetIntegerv(GL_SAMPLES,&count);
+        samples_=std::max(samples_,count);
+    }
+    void Release(OpenGl_Context*) override {}
+private:
+    int& samples_;
+};
+class SamplePresentation : public AIS_InteractiveObject {
+public:
+    explicit SamplePresentation(int& samples):samples_(samples) { SetInfiniteState(true); }
+    void Compute(const occ::handle<PrsMgr_PresentationManager>&,const occ::handle<Prs3d_Presentation>& presentation,int) override {
+        const auto group=occ::down_cast<OpenGl_Group>(presentation->NewGroup());
+        group->SetMinMaxValues(-1,-1,-1,1,1,1);
+        group->AddElement(new SampleRead(samples_));
+    }
+    void ComputeSelection(const occ::handle<SelectMgr_Selection>&,int) override {}
+private:
+    int& samples_;
+};
+void rasterChecks(inspector::Viewport& v) {
+    using inspector::NavigationProbe;
+    auto& view=NavigationProbe::view(v);auto& context=NavigationProbe::context(v);
+    int observed=-1;
+    const occ::handle<SamplePresentation> probe=new SamplePresentation(observed);
+    context->Display(probe,0,-1,false);
+    const auto limit=context->CurrentViewer()->Driver()->InquireLimit(Graphic3d_TypeOfLimit_MaxMsaa);
+    const auto requested=view->RenderingParams().NbMsaaSamples;
+    check(requested==4,"modest raster MSAA default requested");
+    v.redraw();
+    std::cout<<"Raster MSAA: requested "<<requested<<", hardware maximum "<<limit<<", actual draw samples "<<observed<<'\n';
+    check(observed>=0 && observed<=4 && observed<=std::max(limit,0),"draw framebuffer uses supported samples or the zero-sample fallback");
+    view->ChangeRenderingParams().NbMsaaSamples=0;observed=-1;v.redraw();
+    const auto path=std::filesystem::temp_directory_path()/"geo-vis-refine-02-fix01-no-msaa.png";
+    check(v.capture(path.string()) && observed==0,"non-multisampled fallback still renders");
+    view->ChangeRenderingParams().NbMsaaSamples=requested;v.redraw();
+    context->Remove(probe,false);
+    check(v.error().empty(),"raster fallback leaves viewport functional");
 }
 void scaleBarChecks(inspector::Viewport& v,const std::string& suffix) {
     using inspector::NavigationProbe;
@@ -69,15 +188,24 @@ void scaleBarChecks(inspector::Viewport& v,const std::string& suffix) {
     const auto path=std::filesystem::temp_directory_path()/("geo-vis-scale-"+suffix+".png");
     check(v.capture(path.string()),"scale bar framebuffer");
     QImage image(QString::fromStdString(path.string()));
-    // Measure the drawn bright horizontal stroke, independently of AIS geometry.
+    // Isolate drawn coverage from an otherwise identical frame. A fixed bright
+    // RGB threshold misses partially covered MSAA pixels at DPR 1. Positive
+    // coverage relative to the negative control excludes the dark halo, while
+    // accepting the light stroke over either background or the amber face.
+    const auto withoutPath=std::filesystem::temp_directory_path()/("geo-vis-scale-"+suffix+"-without.png");
+    NavigationProbe::context(v)->Erase(bar,false);v.redraw();
+    check(v.capture(withoutPath.string()),"scale bar negative-control framebuffer");
+    const QImage without(QString::fromStdString(withoutPath.string()));
+    NavigationProbe::context(v)->Display(bar,0,-1,false);v.redraw();
     const double ratio=v.devicePixelRatioF();
     const int end=image.width()-qRound(18*ratio),row=image.height()-qRound(18*ratio);
     int longest=0;
     for(int y=row-qRound(2*ratio);y<=row+qRound(2*ratio);++y) {
         int run=0;
         for(int x=std::max(0,end-qRound(160*ratio));x<std::min(image.width(),end+qRound(4*ratio));++x) {
-            const auto p=image.pixelColor(x,y);
-            run=p.red()>210 && p.green()>210 && p.blue()>210?run+1:0;
+            const auto drawn=image.pixelColor(x,y),base=without.pixelColor(x,y);
+            const int lightening=std::max({drawn.red()-base.red(),drawn.green()-base.green(),drawn.blue()-base.blue()});
+            run=lightening>8?run+1:0;
             longest=std::max(longest,run);
         }
     }
@@ -276,6 +404,8 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
     for(const auto& c:display.components) for(const auto& e:c.entities) if(e.kind==inspector::Kind::Face) { selected=e.id;break; }
     v.setPickMode(inspector::Kind::Face);check(v.select(selected),"selected camera-test face");
     const auto selectedOwner=inspector::NavigationProbe::owner(v);
+    cubeProjectionChecks(v);
+    rasterChecks(v);
     // Compare actual render pixels rather than only checking detection metadata.
     const auto imagePath=std::filesystem::temp_directory_path()/"geo-vis-camera-cube-idle.png";
     QEvent leave(QEvent::Leave);QApplication::sendEvent(&v,&leave);
@@ -316,8 +446,10 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
     v.selectionChanged=[&](const std::string&) {++selections;};
     for(int projection=0;projection<2;++projection) {
         check(v.perspective()==(projection==1),"projection test setup");
+        for(int face:{V3d_Xneg,V3d_Yneg,V3d_Zpos}) projectedTileClicks(v,face,selected,true);
         std::set<int> clicked;
         for(int face=0;face<6;++face) {
+            projectedTileClicks(v,face,selected);
             v.orient(static_cast<V3d_TypeOfOrientation>(face));
             const int h=qRound(v.height()*v.devicePixelRatioF());
             std::map<int,QPoint> hits;
@@ -346,7 +478,9 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
         v.orient(V3d_XposYnegZpos);v.fit();
         const auto fitted=v.camera();
         const QPoint start(qRound(v.width()*v.devicePixelRatioF()/2),qRound(v.height()*v.devicePixelRatioF()/2));
-        const QPoint end=cubeCenter;
+        // O/P tile locations differ. Use a visible X+ face-centre in the
+        // active projection, rather than reusing an O hover pixel in a P gap.
+        const QPoint end=cubePixel(v,gp_Pnt(inspector::NavigationProbe::cube(v)->Size()/2,0,0)).toPoint();
         mouse(v,QEvent::MouseButtonPress,start,Qt::RightButton,Qt::RightButton);
         mouse(v,QEvent::MouseMove,end,Qt::NoButton,Qt::RightButton);
         mouse(v,QEvent::MouseButtonRelease,end,Qt::RightButton,Qt::NoButton);
@@ -403,6 +537,25 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
         const auto returned=v.camera();
         mouse(v,QEvent::MouseButtonRelease,end,Qt::LeftButton,Qt::NoButton);
         check(returned->Direction().IsEqual(v.camera()->Direction(),1e-12) && v.selectedId()==selected && selections==0,"drag returning to tile stays a drag without snap or pick");
+        // A chorded press/release must not restart or finish a left-owned drag.
+        for(const auto extra:{Qt::RightButton,Qt::MiddleButton}) {
+            v.orient(V3d_XposYnegZpos);
+            mouse(v,QEvent::MouseButtonPress,end,Qt::LeftButton,Qt::LeftButton);
+            mouse(v,QEvent::MouseMove,end+delta,Qt::NoButton,Qt::LeftButton);
+            const auto started=v.camera();
+            mouse(v,QEvent::MouseButtonPress,end+delta,extra,Qt::LeftButton|extra);
+            check(QWidget::mouseGrabber()==&v,"extra button press preserves left cube capture");
+            mouse(v,QEvent::MouseButtonRelease,end+delta,extra,Qt::LeftButton);
+            check(QWidget::mouseGrabber()==&v && started->Direction().IsEqual(v.camera()->Direction(),1e-12),"extra button release preserves left cube state and capture");
+            mouse(v,QEvent::MouseMove,end,Qt::NoButton,Qt::LeftButton);
+            const auto returnedChord=v.camera();
+            // A reset would use the second press as orbit origin, producing a
+            // different result when returning to the original left press point.
+            check(returnedChord->Direction().IsEqual(returned->Direction(),1e-12),"extra press does not reset cube orbit origin");
+            mouse(v,QEvent::MouseButtonRelease,end,Qt::LeftButton,Qt::NoButton);
+            check(QWidget::mouseGrabber()!=&v && returnedChord->Direction().IsEqual(v.camera()->Direction(),1e-12) &&
+                  v.selectedId()==selected && inspector::NavigationProbe::owner(v)==owner && selections==0,"final left release ends capture without snap or selected owner change");
+        }
         v.orient(V3d_XposYnegZpos);v.fit();
         check(v.camera()->Center().Distance(fitted->Center())<1e-7 && std::abs(v.camera()->Scale()-fitted->Scale())<1e-7,"screen cube excluded from Fit bounds");
         v.toggleProjection();
@@ -435,5 +588,5 @@ void cameraRenderChecks(inspector::Viewport& v,const inspector::Display& display
     v.resetCamera();
     v.showDisplay(nullptr);
     check(v.error().empty(),"camera viewport error");
-    std::cout<<"PASS — real cube clicks: all 26 directions from 54 tiles in both projections; camera/selection isolation\n";
+    std::cout<<"PASS — real cube clicks: all 26 directions from 54 tiles and oblique tile centres in both projections; left-owned right/middle chords and camera/selection isolation\n";
 }

@@ -55,6 +55,7 @@ protected:
 private:
     friend struct ViewportProbe; // Focused native presentation regressions.
     friend struct NavigationProbe;
+    friend struct CaptureProbe;
     struct Object { const Component* component; occ::handle<AIS_Shape> ais; };
     void initialize();
     void populate(bool refit);
@@ -93,6 +94,7 @@ private:
     QSize nativeSize_;
     bool dragged_ = false;
     bool cubePressed_ = false;
+    bool cubeLeftGesture_ = false;
     std::string error_;
 };
 }

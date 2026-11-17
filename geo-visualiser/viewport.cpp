@@ -101,6 +101,9 @@ void Viewport::initialize() {
     occ::handle<Xw_Window> window = new Xw_Window(connection, static_cast<Aspect_Drawable>(winId()));
 #endif
     view_->SetWindow(window);
+    // OCCT clamps to hardware limits and falls back if MSAA FBO/blit fails.
+    // Keep raster AA optional; no graphics capability becomes a launch gate.
+    view_->ChangeRenderingParams().NbMsaaSamples=4;
     view_->SetBackgroundColor(Quantity_Color(0.10,0.12,0.16,Quantity_TOC_RGB));
     view_->SetProj(V3d_XposYnegZpos);
     view_->MustBeResized();
@@ -445,13 +448,15 @@ void Viewport::showEvent(QShowEvent*) { guard([&] { if(view_.IsNull()) initializ
 void Viewport::paintEvent(QPaintEvent*) { guard([&] { redraw(); }); }
 void Viewport::resizeEvent(QResizeEvent*) { nativeSize_={};update(); }
 void Viewport::mousePressEvent(QMouseEvent* e) {
+    if(cubeLeftGesture_) return;
     setFocus(Qt::MouseFocusReason);
     press_ = previous_ = physical(e->position()); dragged_ = false;
     cubePressed_=cubeArea(press_.x(),press_.y());
+    cubeLeftGesture_=cubePressed_ && e->button()==Qt::LeftButton;
     guard([&] { if(!view_.IsNull() && e->button() == Qt::LeftButton) {
         view_->StartRotation(press_.x(),press_.y());
         // Keep receiving a cube gesture beyond its footprint and widget edge.
-        if(cubePressed_) grabMouse();
+        if(cubeLeftGesture_) grabMouse();
     } });
 }
 void Viewport::mouseMoveEvent(QMouseEvent* e) {
@@ -471,6 +476,7 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
     previous_ = p;
 }
 void Viewport::mouseReleaseEvent(QMouseEvent* e) {
+    if(cubeLeftGesture_ && e->button()!=Qt::LeftButton) return;
     const auto p = physical(e->position());
     if(cubePressed_ && (p-press_).manhattanLength() > 4*devicePixelRatioF()) dragged_ = true;
     guard([&] {
@@ -478,8 +484,9 @@ void Viewport::mouseReleaseEvent(QMouseEvent* e) {
             if(!cubePressed_ || cubeDirectionAt(p.x(),p.y())) pick(p.x(),p.y());
         }
     });
-    if(cubePressed_ && mouseGrabber()==this) releaseMouse();
+    if(cubeLeftGesture_ && mouseGrabber()==this) releaseMouse();
     cubePressed_=false;
+    cubeLeftGesture_=false;
 }
 void Viewport::leaveEvent(QEvent*) {
     guard([&] { if(!context_.IsNull()) { context_->ClearDetected(false); redraw(); } });

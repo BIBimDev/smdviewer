@@ -7,12 +7,47 @@
 #include <Prs3d_Presentation.hxx>
 #include <Prs3d_LineAspect.hxx>
 #include <Prs3d_DatumAspect.hxx>
+#include <Prs3d_ShadingAspect.hxx>
 #include <cmath>
 #include <SelectMgr_Selection.hxx>
 #include <SelectBasics_SelectingVolumeManager.hxx>
 
 namespace inspector {
 namespace {
+// An affine view transform keeps OCCT rendering, BVH and sensitive triangles
+// on the same path. In P, shear cancels the corner's off-axis skew; independent
+// view-depth scaling gives a fixed mild perspective (focal length = 6 sides).
+// Model camera pan, target and zoom never enter the cube's apparent position.
+class CubePersistence : public Graphic3d_TransformPers {
+public:
+    explicit CubePersistence(double ratio)
+        : Graphic3d_TransformPers(Graphic3d_TMF_TriedronPers,Aspect_TOTP_LEFT_LOWER,
+              NCollection_Vec2<int>(int(std::round(100*ratio)),int(std::round(100*ratio)))),ratio_(ratio) {}
+    NCollection_Mat4<double> ComputeApply(occ::handle<Graphic3d_Camera>& camera,int width,int height,
+                                         const gp_Pnt* anchor=nullptr) const override {
+        if(camera->IsOrthographic() || width<=0 || height<=0)
+            return Graphic3d_TransformPers::ComputeApply(camera,width,height,anchor);
+        const double distance=camera->Distance();
+        const double xy=distance*camera->ViewDimensions(1).Y()/height;
+        const double z=distance/(6*84*ratio_);
+        const auto& projection=camera->ProjectionMatrix();
+        const double xOffset=(-1+2.0*Offset2d().x()/width)/projection.GetValue(0,0);
+        const double yOffset=(-1+2.0*Offset2d().y()/height)/projection.GetValue(1,1);
+        const auto& rotation=camera->OrientationMatrix();
+        NCollection_Mat4<double> result;
+        for(int j=0;j<3;++j) {
+            result.SetValue(0,j,xy*rotation.GetValue(0,j)-xOffset*z*rotation.GetValue(2,j));
+            result.SetValue(1,j,xy*rotation.GetValue(1,j)-yOffset*z*rotation.GetValue(2,j));
+            result.SetValue(2,j,z*rotation.GetValue(2,j));
+        }
+        result.SetValue(0,3,xOffset*distance);
+        result.SetValue(1,3,yOffset*distance);
+        result.SetValue(2,3,-distance);
+        return result;
+    }
+private:
+    double ratio_;
+};
 // Stock ViewCube sensitivity expands edges/corners and filters against the
 // owner's diagonal. A tiled face needs uniform precision and its own normal,
 // otherwise hidden/grazing tiles can win detection through the visible gaps.
@@ -70,11 +105,11 @@ void ViewCube::setPixelRatio(double ratio) {
     SetSize(84*ratio);
     SetBoxFacetExtension(0);
     SetAxesPadding(8*ratio);
-    SetTransformPersistence(new Graphic3d_TransformPers(Graphic3d_TMF_TriedronPers | Graphic3d_TMF_OrthoPers,
-        Aspect_TOTP_LEFT_LOWER,NCollection_Vec2<int>(int(std::round(100*ratio)),int(std::round(100*ratio)))));
+    SetTransformPersistence(new CubePersistence(ratio));
 }
 void ViewCube::createBoxPartTriangles(const occ::handle<Graphic3d_ArrayOfTriangles>& tris,
                                     int& nodes,int& triangles,V3d_TypeOfOrientation direction) const {
+    if(axesOnly_) return;
     for(const auto& tile:cubeTiles(direction,Size())) {
         if(!tris.IsNull()) {
             const int start=tris->VertexNumber();
@@ -99,8 +134,37 @@ void ViewCube::ComputeSelection(const occ::handle<SelectMgr_Selection>& selectio
 }
 void ViewCube::Compute(const occ::handle<PrsMgr_PresentationManager>& manager,
                        const occ::handle<Prs3d_Presentation>& presentation,int mode) {
-    AIS_ViewCube::Compute(manager,presentation,mode);
+    // Keep the stock trihedron, but supply our own unlit face groups. The same
+    // tile generator still supplies native hover and sensitive presentations.
+    axesOnly_=true;
+    try { AIS_ViewCube::Compute(manager,presentation,mode); }
+    catch(...) { axesOnly_=false;throw; }
+    axesOnly_=false;
     if(mode!=0) return;
+    const Quantity_Color tones[]={
+        {0.40,0.60,0.82,Quantity_TOC_RGB}, {0.54,0.66,0.39,Quantity_TOC_RGB},
+        {0.82,0.85,0.88,Quantity_TOC_RGB}, {0.20,0.35,0.55,Quantity_TOC_RGB},
+        {0.31,0.49,0.35,Quantity_TOC_RGB}, {0.52,0.55,0.60,Quantity_TOC_RGB}
+    };
+    for(int face=0;face<6;++face) {
+        occ::handle<Graphic3d_ArrayOfTriangles> triangles=new Graphic3d_ArrayOfTriangles(36,54);
+        const auto normal=V3d::GetProjAxis(static_cast<V3d_TypeOfOrientation>(face));
+        for(int direction=0;direction<26;++direction)
+            for(const auto& tile:cubeTiles(static_cast<V3d_TypeOfOrientation>(direction),Size()))
+                if(tile.normal.IsEqual(normal,1e-12)) {
+                    const int start=triangles->VertexNumber();
+                    for(const auto& point:tile.corners) triangles->AddVertex(point);
+                    for(int index:{1,2,3,1,3,4}) triangles->AddEdge(start+index);
+                }
+        const occ::handle<Prs3d_ShadingAspect> aspect=new Prs3d_ShadingAspect();
+        aspect->SetColor(tones[face]);
+        aspect->Aspect()->SetShadingModel(Graphic3d_TypeOfShadingModel_Unlit);
+        aspect->Aspect()->SetFaceCulling(Graphic3d_TypeOfBackfacingModel_BackCulled);
+        const auto group=presentation->NewGroup();
+        group->SetClosed(true);
+        group->SetGroupPrimitivesAspect(aspect->Aspect());
+        group->AddPrimitiveArray(triangles);
+    }
     // Small vector X/Y/Z +/- labels: works with the existing FreeType-OFF install.
     occ::handle<Graphic3d_ArrayOfSegments> lines=new Graphic3d_ArrayOfSegments(128);
     for(int i=V3d_Xpos;i<=V3d_Zneg;++i) {
