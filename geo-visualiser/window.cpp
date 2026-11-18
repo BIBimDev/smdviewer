@@ -5,6 +5,7 @@
 #include <QToolButton>
 #include <QMenu>
 #include <QInputDialog>
+#include <QPersistentModelIndex>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
@@ -27,6 +28,7 @@
 #include <Standard_Failure.hxx>
 #include <sstream>
 #include <iomanip>
+#include <memory>
 
 namespace inspector {
 namespace {
@@ -345,18 +347,24 @@ void Window::details(const Entity* e) {
         "Select one entity in the viewport or tree.\nConverted faces are a face collection, not a solid.\nB is a derived candidate. A and R retain recorded Boolean ancestry.\nSource identity, viewer ID, derived lineage and user tags are separate.");
 }
 void Window::tagMenu(const QPoint& point) {
-    auto* row=tree_->itemAt(point);
-    if(!row) return;
-    const auto id=row->data(0,Qt::UserRole).toString().toStdString();
+    const QPersistentModelIndex row(tree_->indexAt(point));
+    if(!document_ || !row.isValid()) return;
+    const auto rowId=row.data(Qt::UserRole).toString();
+    const auto id=rowId.toStdString();
     if(!entity(id) || !items_.contains(id)) return;
-    // Capture the invoked identity, never the previously selected row.
+    // A rebuilt tree invalidates the invoked row even when it reuses the same tag ID.
+    const std::weak_ptr<const Document> invokedDocument=document_;
+    const auto targetIsActive=[&] {
+        return document_ && invokedDocument.lock()==document_ && row.isValid() &&
+               row.data(Qt::UserRole).toString()==rowId;
+    };
     const auto existing=QString::fromStdString(tags_.get(id));
     QMenu menu(this);menu.setObjectName("tagContextMenu");
     auto* edit=menu.addAction(existing.isEmpty()?"Add tag…":"Edit tag…");edit->setObjectName("editTagAction");
     QAction* remove=nullptr;
     if(!existing.isEmpty()) { remove=menu.addAction("Remove tag");remove->setObjectName("removeTagAction"); }
     const auto action=menu.exec(tree_->viewport()->mapToGlobal(point));
-    if(!action) return;
+    if(!action || !targetIsActive()) return;
     QString value;
     if(action==edit) {
         QInputDialog dialog(this);dialog.setObjectName("sessionTagDialog");
@@ -366,6 +374,7 @@ void Window::tagMenu(const QPoint& point) {
         if(dialog.exec()!=QDialog::Accepted) return;
         value=dialog.textValue();
     } else if(action!=remove) return;
+    if(!targetIsActive()) return;
     tags_.set(id,value.toStdString());
 }
 void Window::settings() {

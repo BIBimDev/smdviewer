@@ -29,7 +29,8 @@ bool cameraEqual(const auto& a,const auto& b) {
         a->Scale()==b->Scale() && a->Aspect()==b->Aspect() && a->ZNear()==b->ZNear() && a->ZFar()==b->ZFar();
 }
 }
-QString editSessionTag(QTreeWidget* tree,QTreeWidgetItem* row,const QString& value,bool cancel,bool remove,bool typeShortcuts) {
+QString editSessionTag(QTreeWidget* tree,QTreeWidgetItem* row,const QString& value,bool cancel,bool remove,bool typeShortcuts,
+                       const std::function<void()>& beforeAccept) {
     check(row,"tag action needs an entity row");
     tree->scrollToItem(row);QApplication::processEvents();
     bool menuSeen=false,dialogSeen=false;
@@ -52,7 +53,11 @@ QString editSessionTag(QTreeWidget* tree,QTreeWidgetItem* row,const QString& val
                 for(int code:{Qt::Key_S,Qt::Key_B,Qt::Key_A,Qt::Key_R,Qt::Key_P}) key(editor,code);
                 check(editor->text()=="sbarp","dialog accepts shortcut letters as normal tag text");
             } else dialog->setTextValue(value);
-            if(cancel) dialog->reject();else dialog->accept();
+            if(cancel) dialog->reject();
+            else {
+                if(beforeAccept) beforeAccept();
+                dialog->accept();
+            }
         }
     });
     QTimer deadline;deadline.setSingleShot(true);

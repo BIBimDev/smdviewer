@@ -770,13 +770,28 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     require(openFile(copies.first).isEmpty(),"changed content same path");reset();
     selectFace();require(tagText().isEmpty(),"changed file tags isolated in UI");
     window.screen()->grabWindow(window.winId()).save(QString::fromStdString((std::filesystem::temp_directory_path()/"geo-visualiser-desktop.png").string()));
+    const QString originalTag="tag before viewport failure";
+    const auto taggedId=viewport->selectedId();
+    require(!taggedId.empty(),"stale-tag regression has a selected face");
+    setTag(originalTag);
     const std::string rendererError="Fatal viewport diagnostic <driver> & context";
-    viewport->failed(rendererError);
-    QApplication::processEvents();
-    require(window.windowTitle()=="GEO-Visualiser" && viewport->isHidden() && viewport->selectedId().empty() &&
-            tree->topLevelItemCount()==0,"fatal viewport cleanup resets title, selection and scene");
-    require(status->text()==QString::fromStdString("Unavailable: "+rendererError) &&
-            statusTooltipText(*status)==status->text(),"fatal cleanup keeps the diagnostic and clears the active path");
+    const auto failWhileEditing=[&] {
+        viewport->failed(rendererError);
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        require(window.windowTitle()=="GEO-Visualiser" && viewport->isHidden() && viewport->selectedId().empty() &&
+                tree->topLevelItemCount()==0,"queued fatal cleanup clears the document while the tag editor is open");
+        require(status->text()==QString::fromStdString("Unavailable: "+rendererError) &&
+                statusTooltipText(*status)==status->text(),"fatal cleanup keeps the diagnostic and clears the active path");
+    };
+    require(editSessionTag(tree,tree->currentItem(),"stale replacement",false,false,false,failWhileEditing)==originalTag,
+            "stale edit opened with the original tag");
+    require(openFile(copies.first).isEmpty(),"reopen the unchanged file in the same window after the injected failure");
+    reset();
+    selectFace();
+    require(viewport->selectedId()==taggedId,"reopened row has the same session-tag identity");
+    const auto reopenedTag=tagText();
+    require(reopenedTag==originalTag,"stale edit must preserve the original tag, got: "+reopenedTag.toStdString());
+    std::cout<<"PASS — stale tag edit after queued viewport cleanup preserves the original value on reopen\n";
     Window fresh(samples);fresh.show();QApplication::processEvents();
     auto* freshTree=fresh.findChild<QTreeWidget*>("entities");
     require(editSessionTag(freshTree,firstFaceRow(freshTree),{},true).isEmpty(),"fresh window has no persisted tags");
