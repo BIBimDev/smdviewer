@@ -114,7 +114,10 @@ void refineUiChecks(inspector::Window& window,inspector::Viewport& viewport) {
     QTimer::singleShot(0,[&] {
         auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());check(dialog && dialog->objectName()=="helpDialog","Help opens");
         const auto text=dialog->findChild<QTextBrowser*>("helpText")->toPlainText();
-        for(const auto* phrase:{"S:","B:","A:","R:","P toggles","Orientation cube","left drag","right/middle drag","wheel","picks","raw source-local millimetres","at target","camera target plane","Session tags","canonical file path","not SMD metadata","GEO-VIS-REFINE-03","OCCT: 8.0.1"})
+        for(const auto* phrase:{"File → Open SMD","Ctrl+O","List of Elements","Properties","bottom-left status",
+            "Settings","Show context","S:","B:","A:","R:","P toggles","Orientation cube","left drag","right/middle drag",
+            "wheel","picks","raw source-local millimetres","at target","camera target plane","Session tags","canonical file path",
+            "not SMD metadata","GEO-VIS-REFINE-04","OCCT: 8.0.1"})
             check(text.contains(phrase),phrase);
         dialog->grab().save(QDir::tempPath()+"/geo-vis-step3-help.png");
         helpSeen=true;dialog->accept();

@@ -139,6 +139,8 @@ void Viewport::setDisplayStyle(DisplayStyle style) {
     });
 }
 void Viewport::setAppearance(const Appearance& appearance) {
+    const bool contextChanged=showContext_!=appearance.showContext;
+    showContext_=appearance.showContext;
     palette_=appearance.palette;transparency_=appearance.transparency;
     guard([&] {
         for(const auto& object:objects_) {
@@ -153,6 +155,7 @@ void Viewport::setAppearance(const Appearance& appearance) {
             context_->SetTransparency(ais,style_==DisplayStyle::Transparent?transparency_:0.0,false);
             context_->Redisplay(ais,false);
         }
+        if(contextChanged && !context_.IsNull()) populateContext();
         redraw();
     });
 }

@@ -402,6 +402,9 @@ void representationClearanceChecks(Viewport& v,const Document& document) {
     std::cout<<"PASS — representation eye clearance and safe Perspective comparison camera\n";
 }
 }
+std::size_t visibleContextOutlines(inspector::Viewport& viewport) {
+    return inspector::ViewportProbe::outlines(viewport).size();
+}
 void displayMappingChecks(const inspector::Document& document) {
     using namespace inspector;
     for(const auto active:{Representation::Faces,Representation::Solid,Representation::Candidate,Representation::Extensions,Representation::Reductions}) {

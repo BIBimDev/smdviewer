@@ -2,6 +2,7 @@
 #include "appearance.hpp"
 #include <QDialog>
 #include <QSettings>
+#include <QCheckBox>
 #include <QSpinBox>
 #include <QSlider>
 #include <QLabel>
@@ -27,5 +28,6 @@ private:
     std::array<QLabel*,3> swatches_{};
     QSlider* transparency_;
     QLabel* percent_;
+    QCheckBox* showContext_;
 };
 }

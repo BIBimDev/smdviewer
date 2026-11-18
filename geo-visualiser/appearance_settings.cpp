@@ -33,6 +33,7 @@ Appearance loadAppearance(QSettings& settings) {
     bool ok=false;
     const double transparency=settings.value("transparency",factoryTransparency).toDouble(&ok);
     if(ok && std::isfinite(transparency) && transparency>=0 && transparency<=1) result.transparency=transparency;
+    result.showContext=settings.value("showContext",result.showContext).toBool();
     settings.endGroup();
     return result;
 }
@@ -44,6 +45,7 @@ bool saveAppearance(QSettings& settings,const Appearance& appearance) {
         settings.setValue(QString(names[i])+"Linear",QVariantList{rgb[0],rgb[1],rgb[2]});
     }
     settings.setValue("transparency",appearance.transparency);
+    settings.setValue("showContext",appearance.showContext);
     settings.endGroup();settings.sync();
     return settings.status()==QSettings::NoError;
 }
@@ -80,7 +82,14 @@ AppearanceDialog::AppearanceDialog(const Appearance& initial,QSettings& settings
     connect(transparency_,&QSlider::valueChanged,this,[this](int value) {
         preview_.transparency=value/100.0;percent_->setText(QString::number(value)+"%");apply_(preview_);
     });
-    auto* note=new QLabel("Changes preview in the current display style. OK saves appearance locally.\nSession tags and document state are never saved here.");
+    showContext_=new QCheckBox("Show context");
+    showContext_->setObjectName("showContext");
+    showContext_->setToolTip("Show passive outlines of the other partial bodies");
+    layout->addWidget(showContext_);
+    connect(showContext_,&QCheckBox::toggled,this,[this](bool show) {
+        preview_.showContext=show;apply_(preview_);
+    });
+    auto* note=new QLabel("Changes preview in the current view. OK saves these preferences locally.");
     note->setWordWrap(true);layout->addWidget(note);
     auto* buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
     buttons->setObjectName("appearanceButtons");
@@ -104,6 +113,8 @@ void AppearanceDialog::refresh() {
     QSignalBlocker block(transparency_);
     transparency_->setValue(int(std::lround(preview_.transparency*100)));
     percent_->setText(QString::number(transparency_->value())+"%");
+    QSignalBlocker contextBlock(showContext_);
+    showContext_->setChecked(preview_.showContext);
 }
 void AppearanceDialog::accept() {
     if(!saveAppearance(settings_,preview_)) {

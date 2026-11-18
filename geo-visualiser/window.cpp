@@ -19,95 +19,114 @@
 #include <QApplication>
 #include <QKeyEvent>
 #include <QStatusBar>
+#include <QStyle>
 #include <QTextEdit>
-#include <QCheckBox>
+#include <QPainter>
 #include <Standard_Failure.hxx>
 #include <sstream>
 #include <iomanip>
 
 namespace inspector {
+namespace {
+class LoadStatusLabel : public QLabel {
+public:
+    LoadStatusLabel() {
+        setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);
+        setTextFormat(Qt::PlainText);
+    }
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        const auto bounds=contentsRect();
+        style()->drawItemText(&painter,bounds,Qt::AlignLeft|Qt::AlignVCenter,palette(),isEnabled(),
+            fontMetrics().elidedText(text(),Qt::ElideRight,bounds.width()),QPalette::WindowText);
+    }
+};
+}
 Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     preferences_.setFallbacksEnabled(false);
-    setWindowTitle("GEO-Visualiser | Native OCCT geometry inspector");
+    setWindowTitle("GEO-Visualiser");
     resize(1400,900);
     auto* central = new QWidget;
     setCentralWidget(central);
     auto* layout = new QVBoxLayout(central);
     auto* controls = new QHBoxLayout;
     layout->addLayout(controls);
-    const auto combo = [&](const char* label, const char* objectName) {
-        controls->addWidget(new QLabel(label));
+    const auto combo = [&](const char* label, const char* objectName, int length, bool labelled=false) {
         auto* result = new QComboBox;
         result->setObjectName(objectName);
+        result->setAccessibleName(label);
+        result->setToolTip(label);
         result->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        result->setMinimumContentsLength(12);
+        result->setMinimumContentsLength(length);
+        if(labelled) {
+            auto* caption=new QLabel(label);
+            caption->setBuddy(result);
+            controls->addWidget(caption);
+        }
         controls->addWidget(result);
         return result;
     };
+    representation_ = combo("Representation", "representation", 24);
+    for(auto r : {Representation::Faces,Representation::Solid,Representation::Candidate,Representation::Extensions,Representation::Reductions})
+        representation_->addItem(name(r));
+    representation_->setCurrentIndex(1);
+    component_ = combo("Isolate", "component", 8, true);
+    pick_ = combo("Pick", "pick", 6, true);
+    for(auto k : {Kind::Vertex,Kind::Edge,Kind::Face,Kind::Body}) pick_->addItem(name(k));
+    pick_->setCurrentIndex(2);
+    auto* style = combo("Display style", "displayStyle", 11);
+    style->addItems({"Shaded","Transparent","Wireframe"});
+    auto* fit = new QPushButton("Fit");
+    fit->setObjectName("fit");
+    controls->addWidget(fit);
+    controls->addStretch();
+
     auto* menuButton=new QToolButton;
     menuButton->setText("☰");menuButton->setAccessibleName("Menu");menuButton->setToolTip("Menu");
     menuButton->setObjectName("mainMenu");menuButton->setPopupMode(QToolButton::InstantPopup);
     auto* menu=new QMenu(menuButton);menuButton->setMenu(menu);
+    auto* fileMenu=menu->addMenu("File");
+    fileMenu->setObjectName("fileMenu");
+    auto* openAction=fileMenu->addAction("Open SMD…",this,&Window::open);
+    openAction->setObjectName("openSmd");
+    openAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_O));
+    openAction->setAutoRepeat(false);
+    addAction(openAction);
     auto* settingsAction=menu->addAction("Settings…",this,[this] { settings(); });
     settingsAction->setObjectName("settingsAction");
     auto* helpAction=menu->addAction("Help",this,[this] { help(); });helpAction->setObjectName("helpAction");
     controls->addWidget(menuButton);
-    auto* openButton = new QPushButton("Open SMD…");
-    openButton->setObjectName("openSmd");
-    controls->addWidget(openButton);
-    filename_ = new QLabel;
-    filename_->setObjectName("filename");
-    filename_->setTextFormat(Qt::PlainText);
-    controls->addWidget(filename_);
-    representation_ = combo("Representation", "representation");
-    for(auto r : {Representation::Faces,Representation::Solid,Representation::Candidate,Representation::Extensions,Representation::Reductions})
-        representation_->addItem(name(r));
-    representation_->setCurrentIndex(1);
-    component_ = combo("Isolate", "component");
-    pick_ = combo("Pick", "pick");
-    for(auto k : {Kind::Vertex,Kind::Edge,Kind::Face,Kind::Body}) pick_->addItem(name(k));
-    pick_->setCurrentIndex(2);
-    auto* fit = new QPushButton("Fit");
-    controls->addWidget(fit);
-    auto* presentationControls = new QHBoxLayout;
-    layout->addLayout(presentationControls);
-    presentationControls->addWidget(new QLabel("Display style"));
-    auto* style = new QComboBox;
-    style->setObjectName("displayStyle");
-    style->addItems({"Shaded","Transparent","Wireframe"});
-    presentationControls->addWidget(style);
-    auto* context = new QCheckBox("Show context");
-    context->setObjectName("showContext");
-    context->setChecked(true);
-    presentationControls->addWidget(context);
-    presentationControls->addStretch();
-    status_ = new QLabel("Loading original fixture...");
-    status_->setObjectName("status");
-    status_->setWordWrap(true);
-    layout->addWidget(status_);
+
     auto* split = new QSplitter;
     layout->addWidget(split,1);
     auto* sidebar = new QWidget;
     auto* sidebarLayout = new QVBoxLayout(sidebar);
+    sidebarLayout->setContentsMargins(0,0,0,0);
     tree_ = new QTreeWidget;
     tree_->setObjectName("entities");
     tree_->setHeaderLabels({"Entity / source identity", "User tag"});
     tree_->setSelectionMode(QAbstractItemView::SingleSelection);
+    auto* elementsLabel=new QLabel("List of Elements");
+    elementsLabel->setBuddy(tree_);
+    sidebarLayout->addWidget(elementsLabel);
     sidebarLayout->addWidget(tree_,2);
     details_ = new QPlainTextEdit;
     details_->setObjectName("details");
     details_->setReadOnly(true);
+    auto* propertiesLabel=new QLabel("Properties");
+    propertiesLabel->setBuddy(details_);
+    sidebarLayout->addWidget(propertiesLabel);
     sidebarLayout->addWidget(details_,1);
     tree_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(tree_,&QTreeWidget::customContextMenuRequested,this,&Window::tagMenu);
     split->addWidget(sidebar);
     viewport_ = new Viewport;
+    viewport_->setAccessibleName("Canvas");
     viewport_->setAppearance(loadAppearance(preferences_));
     connect(style,&QComboBox::currentIndexChanged,this,[this](int i) { viewport_->setDisplayStyle(static_cast<DisplayStyle>(i)); });
-    connect(context,&QCheckBox::toggled,this,[this](bool show) { viewport_->setShowContext(show); });
     split->addWidget(viewport_);
     split->setSizes({440,960});
-    connect(openButton,&QPushButton::clicked,this,[&] { open(); });
     connect(representation_,&QComboBox::currentIndexChanged,this,[&] { representation(); });
     connect(component_,&QComboBox::currentIndexChanged,this,[&] { showComponents(); });
     connect(pick_,&QComboBox::currentIndexChanged,this,[&](int i) {
@@ -118,8 +137,13 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     connect(tree_,&QTreeWidget::currentItemChanged,this,[&](QTreeWidgetItem* item) {
         select(item ? item->data(0,Qt::UserRole).toString().toStdString() : "",false);
     });
+    status_=new LoadStatusLabel;
+    status_->setObjectName("status");
+    statusBar()->addWidget(status_,1);
+    setLoadStatus("Loading plain_column.smd…");
     projection_=new QLabel;
     projection_->setObjectName("projection");
+    statusBar()->setSizeGripEnabled(false);
     statusBar()->addPermanentWidget(projection_);
     viewport_->projectionChanged=[&] {
         projection_->setText(viewport_->perspective()?"P · Perspective":"O · Orthographic");
@@ -167,6 +191,10 @@ bool Window::eventFilter(QObject* watched,QEvent* event) {
     }
     return true;
 }
+void Window::setLoadStatus(const QString& text) {
+    status_->setText(text);
+    status_->setToolTip("<qt>"+text.toHtmlEscaped()+"</qt>");
+}
 void Window::fail(const std::string& message) {
     viewport_->showDisplay(nullptr);
     viewport_->hide();
@@ -176,7 +204,7 @@ void Window::fail(const std::string& message) {
     items_.clear();
     { QSignalBlocker block(tree_); tree_->clear(); }
     selected_.clear();
-    status_->setText(QString::fromStdString("Unavailable: " + message));
+    setLoadStatus(QString::fromStdString("Unavailable: " + message));
     details_->setPlainText("No validated results exposed. Check the fixture/dependency paths and restart after correcting the error.");
 }
 void Window::open() {
@@ -219,12 +247,12 @@ bool Window::load(const std::filesystem::path& file) {
         component_->setEnabled(!display_.components.empty());
         pick_->setCurrentIndex(static_cast<int>(Kind::Face));
     }
-    filename_->setText(QString::fromStdU16String(file.filename().u16string()));
-    filename_->setToolTip(QString::fromStdU16String(file.u16string()));
     viewport_->setPickMode(Kind::Face);
     viewport_->show();
     showComponents();
     viewport_->resetCamera();
+    if(!viewport_->error().empty()) return false;
+    setWindowTitle("GEO-Visualiser | "+QString::fromStdU16String(file.filename().u16string()));
     return true;
 }
 void Window::representation() {
@@ -275,13 +303,13 @@ void Window::showComponents() {
     viewport_->showDisplay(&display_,isolated,false);
     details(nullptr);
     std::ostringstream out;
-    out << std::setprecision(17) << name(display_.representation) << " | " << display_.components.size() << " component(s)";
+    out << std::setprecision(17) << "Loaded | " << name(display_.representation) << " | " << display_.components.size() << " component(s)";
     if(display_.components.empty()) out << " — empty";
     if(display_.representation == Representation::Candidate) out << " | supporting source face " << document_->candidate.supportingFaceOrdinal << " (candidate-level evidence only)";
     const auto* parts = display_.representation == Representation::Extensions ? &document_->decomposition.extensions :
                         display_.representation == Representation::Reductions ? &document_->decomposition.reductions : nullptr;
     if(parts) for(std::size_t i=0;i<parts->size();++i) out << " | body " << i << ": " << (*parts)[i].volumeMm3 << " mm³";
-    status_->setText(QString::fromStdString(out.str()));
+    setLoadStatus(QString::fromStdString(out.str()));
 }
 const Entity* Window::entity(const std::string& id) const {
     for(const auto& c : display_.components) for(const auto& e : c.entities) if(e.id == id) return &e;
@@ -341,6 +369,11 @@ void Window::help() {
     auto* layout=new QVBoxLayout(&dialog);
     auto* text=new QTextBrowser;text->setObjectName("helpText");
     text->setHtml(QString::fromUtf8(R"(<h2>Inspect geometry</h2>
+<p>Choose <b>☰ → File → Open SMD…</b> or press <b>Ctrl+O</b>. The title shows the active file.
+A cancelled or failed open keeps the current view.</p>
+<p>The command bar contains Representation, Isolate, Pick, Display style and Fit.
+Drag the divider between the left sidebar and Canvas to resize them. The List of Elements is above Properties.
+Hover over the bottom-left status text to read the full component summary and any body volumes.</p>
 <p><b>S</b>: validated solid; <b>B</b>: principal extrusion candidate;
 <b>A</b>: extensions (S ∖ B); <b>R</b>: reductions (B ∖ S), showing missing material.
 These keys match Representation. Converted faces remain a face collection.
@@ -352,7 +385,7 @@ or a corner tile for an isometric view. Drag with the left button on the cube to
 Cube clicks preserve the projection and selected entity.</p>
 <p><b>Navigate:</b> left drag orbits; right/middle drag pans; wheel zooms. Fit frames the active geometry.
 Left click picks using the Vertex, Edge, Face or Body mode. The tree and viewport share selection.
-Click background to clear selection. Isolate limits the active component; Show context adds passive outlines.</p>
+Click background to clear selection. Isolate limits the active component.</p>
 <h3>Coordinates and scale</h3>
 <p>Coordinates are <b>raw source-local millimetres</b>. No B-rep, element or project placement is applied.
 In Perspective, the scale marked <b>“at target”</b> applies at the camera target plane;
@@ -365,9 +398,11 @@ Cancel leaves the tag unchanged. Tags appear in the User tag column.</p>
 They survive reopening that unchanged file in this window/run; other paths or changed bytes have separate tags.
 Closing the session clears tags. A tag is not SMD metadata and never changes source evidence.</p>
 <h3>Appearance</h3>
-<p>Settings previews B/A/R sRGB colours and transparency in the current style. 0% is opaque;
-72% is the factory transparency. Default values previews the factory settings. OK saves appearance locally;
-Cancel, Escape or closing Settings restores its opening appearance. Tags and document state are not saved.</p>
+<p><b>☰ → Settings</b> previews B/A/R sRGB colours, transparency and <b>Show context</b> in the current view.
+Show context displays passive outlines of the other partial bodies and is on by default.
+0% transparency is opaque. The factory transparency is 72%.
+Default values previews the factory settings. OK saves preferences for the next launch.
+Cancel, Escape or closing Settings restores the preferences that were active when it opened.</p>
 <h3>About</h3><p>GEO-Visualiser — native SMD geometry inspector<br>Build: %1<br>OCCT: %2</p>)")
         .arg(QString::fromUtf8(inspectorBuild).toHtmlEscaped(),QString::fromLatin1(OCC_VERSION_COMPLETE)));
     layout->addWidget(text);

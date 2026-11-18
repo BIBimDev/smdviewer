@@ -24,6 +24,7 @@ private:
     void tagMenu(const QPoint&);
     void settings();
     void help();
+    void setLoadStatus(const QString&);
     void fail(const std::string&);
     const Entity* entity(const std::string&) const;
     std::filesystem::path samples_;
@@ -33,7 +34,6 @@ private:
     std::string selected_;
     Viewport* viewport_;
     QComboBox *representation_, *component_, *pick_;
-    QLabel* filename_;
     QTreeWidget* tree_;
     QPlainTextEdit* details_;
     QSettings preferences_{QSettings::IniFormat,QSettings::UserScope,"BIBimDev","GEO-Visualiser"};

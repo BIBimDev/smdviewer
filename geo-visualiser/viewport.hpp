@@ -23,7 +23,7 @@ public:
     void setDisplayStyle(DisplayStyle);
     void setShowContext(bool);
     void setAppearance(const Appearance&);
-    Appearance appearance() const { return {palette_,transparency_}; }
+    Appearance appearance() const { return {palette_,transparency_,showContext_}; }
     void setPickMode(Kind);
     bool select(const std::string& id);
     void fit();

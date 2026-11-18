@@ -30,5 +30,6 @@ inline constexpr double factoryTransparency=0.72;
 struct Appearance {
     Palette palette=factoryPalette;
     double transparency=factoryTransparency;
+    bool showContext=true;
 };
 }

@@ -1,6 +1,6 @@
 # GEO-Visualiser — native inspection
 
-Current menu, appearance preferences and session tags: [GEO-VIS-REFINE-03](GEO-VIS-REFINE-03.md).
+Appearance and session-tag implementation record: [GEO-VIS-REFINE-03](GEO-VIS-REFINE-03.md).
 
 Current camera controls and Kubuntu handoff: [GEO-VIS-CAMERA-01](GEO-VIS-CAMERA-01.md).
 
@@ -34,8 +34,9 @@ changes the caller's environment. Keep the configured dependency installations
 available. MSVC's x64 runtime must also be available (present on the tested
 Build Tools machine); a portable installer/runtime deployment is not delivered.
 
-Use **Open SMD…** to open one existing `.smd` file. The adjacent label shows
-the active filename; its tooltip shows the full path. The dialog starts in the
+Choose **☰ → File → Open SMD…** or press **Ctrl+O** to open an existing `.smd`
+file. The title bar shows `GEO-Visualiser | <basename>` after a successful open,
+including the initial `plain_column.smd` load. The dialog starts in the
 checkout's `public/samples` directory every time and allows navigation elsewhere.
 The directory is captured as an absolute source checkout path by CMake;
 reconfigure after moving the checkout. The original combined filename is
@@ -44,9 +45,24 @@ reconfigure after moving the checkout. The original combined filename is
 Each open rereads the file and runs the full native pipeline. Only after the
 pipeline and initial S display data are ready does the new document replace the
 old one. Success resets S / All / Face, default camera orientation fitted to S,
-selection and metadata. Cancel changes nothing. A failed
-read, parse, geometry stage (including unsupported B), or display preparation
-reports the attempted path and stage while retaining the previous document/view.
+selection and metadata. Cancel retains the title and view. A failed read, parse,
+geometry stage (including unsupported B), or display preparation reports the
+attempted path and stage while retaining the previous title, document and view.
+
+The single command row contains Representation, Isolate, Pick, Display style
+and Fit, with **☰** at the far right. Hover over the Representation and Display
+style dropdowns for their labels. Drag the divider to resize the sidebar and
+Canvas. The sidebar places the List of Elements above Properties. The status
+line shows the load state and representation summary at bottom left and the
+active projection at bottom right. Hover over the summary for its full text,
+including any A/R component volumes.
+
+**☰ → Settings → Show context** displays passive outlines of the other partial
+bodies. It starts on when the profile has no saved value. Changes preview
+immediately and preserve the camera, selection, representation and display
+style. **Default values** previews the factory preferences with context on.
+**Cancel**, **Escape** and closing Settings restore the opening values.
+**OK** saves the preferences for the next launch.
 
 The initial view is plain-column **validated solid S**. Choose Converted faces,
 S, B, A or R with Representation; only that representation is displayed.

@@ -10,6 +10,11 @@
 #include "smd/json.hpp"
 #include <QApplication>
 #include <QPushButton>
+#include <QToolButton>
+#include <QMenu>
+#include <QDialogButtonBox>
+#include <QStatusBar>
+#include <QSplitter>
 #include <QImage>
 #include <QScreen>
 #include <QMouseEvent>
@@ -25,6 +30,7 @@
 #include <QEventLoop>
 #include <QThread>
 #include <fstream>
+#include <array>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepGProp.hxx>
@@ -292,11 +298,78 @@ void documentChecks(const std::filesystem::path& samples) {
     require(!solid.solid.IsNull(),"synthetic input passes S validation");
     rejects([&] {buildDocument("unsupported-B",parsed);},"buildPrincipalPrismCandidate:");
 }
-void uiChecks(const std::filesystem::path& samples) {
+QString titleFor(const std::filesystem::path& file) {
+    return "GEO-Visualiser | "+QString::fromStdU16String(file.filename().u16string());
+}
+void workspaceChecks(Window& window,Viewport& canvas) {
+    auto* central=window.centralWidget();
+    auto* representation=central->findChild<QComboBox*>("representation");
+    auto* isolate=central->findChild<QComboBox*>("component");
+    auto* pick=central->findChild<QComboBox*>("pick");
+    auto* style=central->findChild<QComboBox*>("displayStyle");
+    auto* fit=central->findChild<QPushButton*>("fit");
+    auto* menu=central->findChild<QToolButton*>("mainMenu");
+    auto* tree=central->findChild<QTreeWidget*>("entities");
+    auto* properties=central->findChild<QPlainTextEdit*>("details");
+    auto* splitter=central->findChild<QSplitter*>();
+    auto* status=window.statusBar()->findChild<QLabel*>("status");
+    auto* projection=window.statusBar()->findChild<QLabel*>("projection");
+    require(representation && isolate && pick && style && fit && menu && tree && properties && splitter && status && projection,
+            "command, workspace and status controls exist");
+    for(auto* control:{representation,style}) {
+        require(!control->toolTip().isEmpty() && control->toolTip()==control->accessibleName(),"unlabelled dropdown has a tooltip and accessible name");
+        for(auto* label:central->findChildren<QLabel*>()) require(label->text()!=control->accessibleName(),"dropdown label is absent from the command row");
+    }
+    for(auto* control:{isolate,pick}) {
+        bool labelled=false;
+        for(auto* label:central->findChildren<QLabel*>()) labelled|=label->buddy()==control && label->isVisible();
+        require(labelled,"Isolate and Pick retain visible labels");
+    }
+    require(splitter->orientation()==Qt::Horizontal && splitter->widget(0)==tree->parentWidget() && splitter->widget(1)==&canvas &&
+            !splitter->handle(1)->isHidden(),"canvas and sidebar retain the adjustable split");
+    const auto sizes=splitter->sizes();
+    splitter->setSizes({sizes[0]-50,sizes[1]+50});
+    require(splitter->sizes()[0]<sizes[0] && splitter->sizes()[1]>sizes[1],"resizing the split grows the canvas as the sidebar shrinks");
+    splitter->setSizes(sizes);
+    const auto rect=[&](QWidget* widget) {return QRect(widget->mapTo(&window,QPoint{}),widget->size());};
+    const auto checkRow=[&] {
+        QApplication::processEvents();
+        const auto rowY=rect(representation).center().y();
+        int right=-1;
+        for(auto* control:std::array<QWidget*,6>{representation,isolate,pick,style,fit,menu}) {
+            const auto bounds=rect(control);
+            require(control->isVisible() && bounds.left()>right && std::abs(bounds.center().y()-rowY)<=1,
+                    "command controls are ordered horizontally on one row");
+            right=bounds.right();
+        }
+        require(std::abs(rect(menu).right()-rect(splitter).right())<=1 && rect(menu).left()>rect(fit).right(),
+                "menu is at the far right of the command row");
+        require(rect(tree).bottom()<rect(properties).top() && rect(&canvas).left()>rect(tree).right() &&
+                rect(&canvas).top()<=rect(tree).top() && rect(&canvas).bottom()>=rect(properties).bottom(),
+                "List of Elements sits above Properties beside a full-height Canvas");
+        require(status->isVisible() && projection->isVisible() && rect(status).right()<rect(projection).left() &&
+                std::abs(rect(status).center().y()-rect(projection).center().y())<=1 && rect(status).top()>rect(&canvas).bottom() &&
+                rect(projection).width()>=projection->sizeHint().width(),"status and full projection share the bottom row");
+        require(status->text().startsWith("Loaded | Reductions") && status->toolTip().contains("1 component(s)") &&
+                status->toolTip().contains("body 0:") && status->toolTip().contains("mm³"),"status preserves component and volume information");
+    };
+    const auto normal=window.size();
+    checkRow();
+    window.resize(std::max(700,window.minimumSizeHint().width()+12),normal.height());
+    require(window.width()<normal.width(),"narrow layout uses a smaller window");
+    checkRow();
+    std::cout<<"PASS — single-row command and status layout at "<<normal.width()<<" and "<<window.width()
+             <<" logical pixels, Qt device pixel ratio "<<window.devicePixelRatioF()<<'\n';
+    window.resize(normal);
+    splitter->setSizes(sizes);
+    QApplication::processEvents();
+}
+void uiChecks(const std::filesystem::path& samples,const QString& preferenceDirectory) {
     Copies copies(samples);
     Window window(samples);window.show();QApplication::processEvents();
-    auto* open=window.findChild<QPushButton*>("openSmd");
-    auto* filename=window.findChild<QLabel*>("filename");
+    auto* menuButton=window.findChild<QToolButton*>("mainMenu");
+    auto* fileMenu=window.findChild<QMenu*>("fileMenu");
+    auto* open=window.findChild<QAction*>("openSmd");
     auto* reps=window.findChild<QComboBox*>("representation");
     auto* component=window.findChild<QComboBox*>("component");
     auto* tree=window.findChild<QTreeWidget*>("entities");
@@ -308,14 +381,17 @@ void uiChecks(const std::filesystem::path& samples) {
     auto* pickMode=window.findChild<QComboBox*>("pick");
     Viewport* viewport=nullptr;
     for(auto* child:window.findChildren<QWidget*>()) if(auto* candidate=dynamic_cast<Viewport*>(child)) viewport=candidate;
-    require(viewport && open && filename,"file controls and viewport exist");
+    require(viewport && menuButton && fileMenu && open && status && projection,"file action, status and viewport exist");
+    require(menuButton->menu()->actions().contains(fileMenu->menuAction()) && fileMenu->actions().contains(open) &&
+            open->shortcut()==QKeySequence(Qt::CTRL | Qt::Key_O),"File submenu owns the Ctrl+O open action");
     QElapsedTimer startup;startup.start();
-    while(filename->text().isEmpty() && status->text().startsWith("Loading") && startup.elapsed()<10000) {
+    while(status->text().startsWith("Loading") && startup.elapsed()<10000) {
         QApplication::processEvents(QEventLoop::AllEvents,50);
         QThread::msleep(1);
     }
-    require(!window.findChild<QComboBox*>("specimen") && reps->currentIndex()==1 && filename->text()==fixtures[0],
-            "Open replaces dropdown; initial plain S: filename="+filename->text().toStdString()+"; status="+status->text().toStdString());
+    require(!window.findChild<QComboBox*>("specimen") && !window.findChild<QLabel*>("filename") &&
+            reps->currentIndex()==1 && window.windowTitle()==titleFor(fixtures[0]),
+            "startup loads plain S and sets the title: "+window.windowTitle().toStdString()+" | "+status->text().toStdString());
     const auto sameCamera=[](const auto& a,const auto& b) {
         return a->ProjectionType()==b->ProjectionType() && a->Eye().Distance(b->Eye())==0 &&
             a->Center().Distance(b->Center())==0 && a->Direction().IsEqual(b->Direction(),0) &&
@@ -326,9 +402,12 @@ void uiChecks(const std::filesystem::path& samples) {
         QApplication::sendEvent(target,&event);
     };
     const auto keyP=[&](QWidget* target,bool repeat=false) { key(target,Qt::Key_P,repeat); };
-    // Drive the actual Qt modal dialog; its reset directory is checked on EVERY open.
-    const auto openFile=[&](const std::filesystem::path& file, bool cancel=false) {
+    enum class OpenVia { Menu, Shortcut };
+    // Drive the menu and shortcut through the real Qt event path, and exercise the same dialog for both.
+    const auto openFile=[&](const std::filesystem::path& file, bool cancel=false, OpenVia via=OpenVia::Menu) {
         bool handled=false;
+        bool menuActivated=false;
+        const auto titleBefore=window.windowTitle();
         std::string error;
         QString diagnostic;
         QTimer driver;
@@ -336,6 +415,7 @@ void uiChecks(const std::filesystem::path& samples) {
         QObject::connect(&driver,&QTimer::timeout,[&] {
             if(auto* dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget()); dialog && !handled) {
                 handled=true;
+                require(window.windowTitle()==titleBefore,"open dialog preserves the active title until success");
                 if(std::filesystem::path(dialog->directory().absolutePath().toStdU16String())!=samples) {
                     error="dialog must start in checkout public/samples";dialog->reject();return;
                 }
@@ -354,7 +434,16 @@ void uiChecks(const std::filesystem::path& samples) {
                 dialog->findChild<QLineEdit*>("fileNameEdit")->setText(QString::fromStdU16String(file.u16string()));
                 QMetaObject::invokeMethod(dialog,"accept",Qt::DirectConnection);
             } else if(auto* message=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+                require(window.windowTitle()==titleBefore,"failed-open warning preserves the active title");
                 diagnostic=message->text();message->accept();
+            } else if(via==OpenVia::Menu && !menuActivated && fileMenu->isVisible()) {
+                menuActivated=true;
+                fileMenu->setActiveAction(open);
+                // Leave this timer callback before the action enters the file dialog's event loop.
+                QTimer::singleShot(0,fileMenu,[&] { key(fileMenu,Qt::Key_Return); });
+            } else if(via==OpenVia::Menu && !menuActivated && menuButton->menu()->isVisible()) {
+                menuButton->menu()->setActiveAction(fileMenu->menuAction());
+                key(menuButton->menu(),Qt::Key_Right);
             }
         });
         QTimer deadline;
@@ -366,10 +455,17 @@ void uiChecks(const std::filesystem::path& samples) {
                 dialog->grab().save("/tmp/geo-vis-open-dialog-timeout.png");
             }
             if(auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget())) dialog->reject();
+            menuButton->menu()->close();
         });
+        window.activateWindow();window.raise();viewport->setFocus();QApplication::processEvents();
         deadline.start(10000);
-        driver.start();open->click();driver.stop();QApplication::processEvents();
-        require(handled && error.empty(),error.empty()?"file dialog exercised":error);
+        driver.start();
+        if(via==OpenVia::Menu) menuButton->showMenu();
+        else key(viewport,Qt::Key_O,false,Qt::ControlModifier);
+        driver.stop();QApplication::processEvents();
+        require(handled && (via==OpenVia::Shortcut || menuActivated) && error.empty(),
+                error.empty()?"file dialog exercised by the requested entry point":error);
+        require(window.windowTitle()==(cancel || !diagnostic.isEmpty()?titleBefore:titleFor(file)),"title tracks successful opens only");
         return diagnostic;
     };
     const auto selectFace=[&] {
@@ -408,7 +504,7 @@ void uiChecks(const std::filesystem::path& samples) {
             }
         }
         reps->setCurrentIndex(1);viewport->resetCamera();
-        std::cout<<"PASS — S/B/A/R dropdown parity in O/P, empty groups, repeats and modifiers for "<<filename->text().toStdString()<<'\n';
+        std::cout<<"PASS — S/B/A/R dropdown parity in O/P, empty groups, repeats and modifiers for "<<window.windowTitle().toStdString()<<'\n';
     };
     const auto camera=[&] {
         std::vector<QPoint> result;
@@ -446,17 +542,16 @@ void uiChecks(const std::filesystem::path& samples) {
         require(picked,"UI pick detected for each mode");
     }
     selectFace();setTag("restart probe");
-    QProcess restarted;
-    restarted.start(QCoreApplication::applicationFilePath(),{QString::fromStdU16String(samples.u16string()),"--fresh-window"});
-    const bool restartedFinished=restarted.waitForFinished(15000);
-    require(restartedFinished && restarted.exitStatus()==QProcess::NormalExit && restarted.exitCode()==0,
-            "new process starts without saved tags: "+restarted.readAllStandardError().toStdString());
     require(openFile(samples/fixtures[1]).isEmpty(),"open combined");reset();
+    const auto combinedCamera=viewport->camera();
+    reps->setCurrentIndex(4);keyP(viewport);selectFace();
+    require(openFile(samples/fixtures[1],false,OpenVia::Shortcut).isEmpty(),"open combined with Ctrl+O");reset();
+    require(sameCamera(combinedCamera,viewport->camera()),"menu and Ctrl+O produce the same scene and camera");
     shortcutParity();
     selectFace();setTag("camera tag");
     auto* style=window.findChild<QComboBox*>("displayStyle");
-    auto* context=window.findChild<QCheckBox*>("showContext");
-    require(style && context && style->currentIndex()==0 && context->isChecked(),"Shaded and context are defaults");
+    require(style && !window.findChild<QCheckBox*>("showContext") && style->currentIndex()==0 && viewport->appearance().showContext,
+            "Shaded and context are defaults; Show context is in Settings");
     const auto retainedId=viewport->selectedId();
     const auto retainedCamera=viewport->camera();
     const auto retainedRow=tree->currentItem();
@@ -468,19 +563,73 @@ void uiChecks(const std::filesystem::path& samples) {
                 details->toPlainText()==retainedDetails && pickMode->currentIndex()==2 &&
                 sameCamera(retainedCamera,viewport->camera()),"style control preserves face/tree/tag/details/camera/pick mode");
     }
+    auto* settings=window.findChild<QAction*>("settingsAction");
+    require(settings,"Settings action available");
+    const auto editContext=[&](const auto& edit) {
+        bool visited=false;
+        QTimer::singleShot(0,[&] {
+            auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            require(dialog && dialog->objectName()=="appearanceSettings","Settings opens the appearance dialog");
+            auto* context=dialog->findChild<QCheckBox*>("showContext");
+            require(context && context->isChecked()==viewport->appearance().showContext,"checkbox reflects the active preference");
+            visited=true;
+            edit(*dialog,*context);
+        });
+        settings->trigger();
+        require(visited,"Settings preview exercised");
+    };
     for(int i:{2,3,4}) {
+        style->setCurrentIndex(i-2);
         const auto before=viewport->camera();reps->setCurrentIndex(i);
         require(sameCamera(before,viewport->camera()),"B to A to R controls preserve camera/projection");
         selectFace();setTag("context tag");
         const auto id=viewport->selectedId();auto* row=tree->currentItem();
         const auto beforeToggle=viewport->camera();const int roots=tree->topLevelItemCount();
-        for(bool show:{false,true}) {
-            context->setChecked(show);
-            require(viewport->selectedId()==id && tree->currentItem()==row && row->text(1)=="context tag" &&
-                    tagText()=="context tag" && tree->topLevelItemCount()==roots &&
-                    sameCamera(beforeToggle,viewport->camera()),"context control preserves owner/tree/tag/framing");
-        }
+        const auto outlines=visibleContextOutlines(*viewport);
+        require(outlines>0,"partial representation starts with visible context outlines");
+        const auto checkContext=[&](bool show) {
+            require(viewport->appearance().showContext==show && visibleContextOutlines(*viewport)==(show?outlines:0),
+                    "Show context changes the displayed outlines immediately");
+            const auto currentCamera=viewport->camera();
+            require(viewport->selectedId()==id && tree->currentItem()==row && tagText()=="context tag" &&
+                    tree->topLevelItemCount()==roots && reps->currentIndex()==i && style->currentIndex()==i-2 &&
+                    pickMode->currentIndex()==static_cast<int>(Kind::Face) && sameCamera(beforeToggle,currentCamera) &&
+                    beforeToggle->ZNear()==currentCamera->ZNear() && beforeToggle->ZFar()==currentCamera->ZFar() &&
+                    beforeToggle->Aspect()==currentCamera->Aspect(),"Show context preserves camera, owner, tree, tag, pick mode and style");
+        };
+        editContext([&](QDialog& dialog,QCheckBox& context) {
+            context.click();checkContext(false);
+            context.click();checkContext(true);
+            context.click();checkContext(false);
+            if(i==2) dialog.findChild<QDialogButtonBox*>("appearanceButtons")->button(QDialogButtonBox::Cancel)->click();
+            if(i==3) key(&dialog,Qt::Key_Escape);
+            if(i==4) dialog.close();
+        });
+        checkContext(true);
     }
+    editContext([&](QDialog& dialog,QCheckBox& context) {
+        context.click();
+        dialog.findChild<QDialogButtonBox*>("appearanceButtons")->button(QDialogButtonBox::Ok)->click();
+    });
+    require(!viewport->appearance().showContext && visibleContextOutlines(*viewport)==0,"OK retains context off");
+    editContext([&](QDialog& dialog,QCheckBox& context) {
+        dialog.findChild<QPushButton*>("defaultValues")->click();
+        require(context.isChecked() && visibleContextOutlines(*viewport)>0,"Default values previews context on");
+        dialog.reject();
+    });
+    require(!viewport->appearance().showContext && visibleContextOutlines(*viewport)==0,"rollback restores the saved off value");
+    QProcess restarted;
+    restarted.start(QCoreApplication::applicationFilePath(),
+        {QString::fromStdU16String(samples.u16string()),"--fresh-window",preferenceDirectory});
+    const bool restartedFinished=restarted.waitForFinished(15000);
+    require(restartedFinished && restarted.exitStatus()==QProcess::NormalExit && restarted.exitCode()==0,
+            "new process restores context preference and starts without saved tags: "+restarted.readAllStandardError().toStdString());
+    editContext([&](QDialog& dialog,QCheckBox& context) {
+        context.click();
+        dialog.findChild<QDialogButtonBox*>("appearanceButtons")->button(QDialogButtonBox::Ok)->click();
+    });
+    style->setCurrentIndex(0);
+    std::cout<<"PASS — Show context previews and rolls back actual outlines, and OK persists across process restart\n";
     reps->setCurrentIndex(1);selectFace();setTag("camera tag");
     const auto cameraSelection=viewport->selectedId();
     auto* cameraRow=tree->currentItem();
@@ -528,16 +677,20 @@ void uiChecks(const std::filesystem::path& samples) {
         require(viewport->selectedId()==selected && tree->currentItem() && tree->currentItem()->text(1)=="saved R tag","failed/cancelled open retains selected owner and saved tag");
         require(tagText()=="saved R tag" && details->toPlainText()==previousDetails && status->text()==previousStatus && camera()==previousCamera,"failed/cancelled open retains tag, details, status and camera");
         require(sameCamera(previousCameraState,viewport->camera()) && projection->text()=="P · Perspective","cancel/failure preserves complete camera and projection indicator");
-        require(filename->text()==fixtures[1],"failed/cancelled open retains active filename");
+        require(window.windowTitle()==titleFor(fixtures[1]),"failed/cancelled open retains the active title");
     };
     openFile({},true);retained();
     const auto diagnostic=openFile(copies.bad);retained();
+    openFile({},true,OpenVia::Shortcut);retained();
+    require(openFile(copies.bad,false,OpenVia::Shortcut)==diagnostic,"menu and Ctrl+O report the same failure");retained();
     std::cerr<<"Failed-open actual dialog: "<<diagnostic.toStdString()<<'\n'
              <<"Failed-open expected full path: "<<QString::fromStdU16String(copies.bad.u16string()).toStdString()<<'\n';
     const auto expectedPath=QDir::fromNativeSeparators(QString::fromStdU16String(copies.bad.u16string()));
     require(QDir::fromNativeSeparators(diagnostic).startsWith(expectedPath+": "),"failed attempt identifies full path");
     require(diagnostic.contains(": parseSmd10125: "),"failed attempt identifies parseSmd10125 stage");
-    require(openFile(samples/fixtures[0]).isEmpty(),"combined to plain");reset();
+    std::cout<<"PASS — menu and Ctrl+O parity for successful, cancelled and failed opens\n";
+    workspaceChecks(window,*viewport);
+    require(openFile(samples/fixtures[0],false,OpenVia::Shortcut).isEmpty(),"combined to plain");reset();
     require(camera()==initialCamera,"plain open resets default orientation and fits new S");
     for(int representation:{3,4}) {
         reps->setCurrentIndex(representation);
@@ -545,7 +698,7 @@ void uiChecks(const std::filesystem::path& samples) {
         require(!viewport->select(selected),"old R pick owner removed");
     }
     require(openFile(copies.first).isEmpty(),"outside copy with spaces/non-ASCII path");reset();
-    require(filename->text()==QString::fromStdU16String(copies.first.filename().u16string()),"active Unicode filename label");
+    require(window.windowTitle()==titleFor(copies.first),"active Unicode basename in title");
     selectFace();setTag("source-face-tag");
     reps->setCurrentIndex(2);selectFace();require(tagText().isEmpty(),"S tag cannot leak onto coincident B face");
     navigation(*viewport,display);
@@ -568,6 +721,7 @@ void uiChecks(const std::filesystem::path& samples) {
     Window missing(samples/"missing-inspector-fixtures");missing.show();QApplication::processEvents();
     require(missing.findChild<QTreeWidget*>("entities")->topLevelItemCount()==0,"startup failure exposes no results");
     require(missing.findChild<QLabel*>("status")->text().contains("read:"),"visible missing-fixture stage diagnostic");
+    require(missing.windowTitle()=="GEO-Visualiser","failed startup keeps the unloaded title");
     window.screen()->grabWindow(window.winId()).save(QString::fromStdString((std::filesystem::temp_directory_path()/"geo-visualiser-desktop.png").string()));
     std::cout<<"PASS — Qt dialog, document reset, failure/cancel preservation and tag isolation\n";
 }
@@ -575,23 +729,28 @@ void uiChecks(const std::filesystem::path& samples) {
 int main(int argc,char** argv) {
     try {
         std::cout<<std::unitbuf;
+        const bool freshWindow=argc==4 && std::string(argv[2])=="--fresh-window";
         QTemporaryDir preferences;
         require(preferences.isValid(),"isolated preferences directory");
-        QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,preferences.path());
-        QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,preferences.path());
-        require(argc==2 || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--fresh-window" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera" || std::string(argv[2])=="--display")),
-                "usage: smd-inspector-tests <samples> [--render|--open|--camera|--display|--fresh-window]");
+        const auto preferenceDirectory=freshWindow?QString::fromLocal8Bit(argv[3]):preferences.path();
+        QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,preferenceDirectory);
+        QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,preferenceDirectory);
+        require(argc==2 || freshWindow || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera" || std::string(argv[2])=="--display")),
+                "usage: smd-inspector-tests <samples> [--render|--open|--camera|--display|--fresh-window <test preferences>]");
         const std::filesystem::path samples=argv[1];
         if(argc==3 && std::string(argv[2])=="--open") {
             QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
             QApplication application(argc,argv);
-            uiChecks(samples);
+            uiChecks(samples,preferenceDirectory);
             return 0;
         }
-        if(argc==3 && std::string(argv[2])=="--fresh-window") {
+        if(freshWindow) {
             QApplication application(argc,argv);
             Window fresh(samples);fresh.show();QApplication::processEvents();
-            require(fresh.findChild<QLabel*>("filename")->text()==fixtures[0],"restart loads plain file");
+            require(fresh.windowTitle()==titleFor(fixtures[0]),"restart loads plain file and sets its title");
+            Viewport* viewport=nullptr;
+            for(auto* child:fresh.findChildren<QWidget*>()) if(auto* candidate=dynamic_cast<Viewport*>(child)) viewport=candidate;
+            require(viewport && !viewport->appearance().showContext,"restart applies the saved context preference");
             auto* tree=fresh.findChild<QTreeWidget*>("entities");
             require(tree->topLevelItemCount()==1,"restart has S");
             for(QTreeWidgetItemIterator it(tree);*it;++it) require((*it)->text(1).isEmpty(),"restart has no saved tags");
@@ -607,7 +766,7 @@ int main(int argc,char** argv) {
             const auto display=prepareDisplay(*document,Representation::Solid);
             cameraRenderChecks(*viewport,display);
             cameraSnapClearanceChecks(*viewport,prepareDisplay(*document,Representation::Candidate));
-            uiChecks(samples);
+            uiChecks(samples,preferenceDirectory);
             return 0;
         }
         if(argc==3 && std::string(argv[2])=="--display") {
@@ -618,7 +777,7 @@ int main(int argc,char** argv) {
                 displayRenderChecks(*viewport,*document);
                 require(snapshot(*document)==before,"evidence preserved through display regression suite");
             }
-            uiChecks(samples);
+            uiChecks(samples,preferenceDirectory);
             return 0;
         }
         std::set<std::string> allIds;
@@ -726,7 +885,7 @@ int main(int argc,char** argv) {
         rejects([&] {loadDocument(samples/"missing-inspector-fixtures");},"read:");
         documentChecks(samples);
         require(Tags{}.get("plain/S/0/Face/0").empty(),"new session has no tags");
-        if(rendering) uiChecks(samples);
+        if(rendering) uiChecks(samples,preferenceDirectory);
         std::cout << "PASS — " << (rendering?"automated desktop test; remote-desktop operator verification remains separate":"adapter test; rendering not exercised") << '\n';
         return 0;
     } catch(const Standard_Failure& e) { std::cerr << "FAIL OCCT: " << e.what() << '\n';return 1; }
