@@ -1,0 +1,55 @@
+COL_[TYPE][POCKET][CORBEL]_[CONDITION]
+
+
+
+
+
+COL
+
+Component category — Column
+
+TYPE
+
+PLAIN / STANDARD / EDGE
+
+POCKET
+
+NO-POCKET / SINGLE-POCKET / DOUBLE-POCKET
+
+CORBEL
+
+NO-CORBEL / SINGLE-CORBEL / DOUBLE-CORBEL / HALF-CORBEL
+
+CONDITION
+
+Optional additional configuration
+
+
+
+
+
+Examples:
+
+Current filename				Proposed filename
+
+plain_column					COL_PLAIN
+
+pocket_column					COL_SINGLE-POCKET
+
+SinglePocketingColumn				COL_SINGLE-POCKET
+
+DoubleCorbelColumn				COL_PLAIN_DOUBLE-CORBEL
+
+SingleHalfCorbelColumn				COL_PLAIN_HALF-CORBEL
+
+SinglePocketingDoubleCorbelColumn		COL_SINGLE-POCKET_DOUBLE-CORBEL
+
+SinglePocketingSingleCorbelColumn		COL_SINGLE-POCKET_SINGLE-CORBEL
+
+SinglePocketingHalfCorbelColumn			COL_SINGLE-POCKET_HALF-CORBEL
+
+EdgeBeamPocketColumn				COL_EDGE-BEAM_SINGLE-POCKET
+
+EdgeBeamPocket&twoCorbels_Column		COL_EDGE-BEAM_SINGLE-POCKET_DOUBLE-CORBEL
+
+SingleCorbelColumn				COL_PLAIN_SINGLE-CORBEL
