@@ -29,6 +29,7 @@ private:
     const Entity* entity(const std::string&) const;
     std::filesystem::path samples_;
     std::shared_ptr<const Document> document_;
+    QString activePath_;
     Display display_{Representation::Solid,{}, {}};
     Tags tags_;
     std::string selected_;

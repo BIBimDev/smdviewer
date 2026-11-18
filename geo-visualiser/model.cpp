@@ -191,8 +191,7 @@ Display prepareDisplay(const Document& d, Representation r) {
 }
 std::string describe(const Document& d, const Entity& e) {
     std::ostringstream out;
-    out << std::setprecision(17) << "Viewer ID (session scope): " << e.id << "\nEntity: " << name(e.kind)
-        << "\nCoordinates: raw source-local millimetres\nSource ordinals: zero-based\n";
+    out << std::setprecision(17) << "Viewer ID (session scope): " << e.id << '\n';
     if(e.sourceFace) sourceFace(out,d.parsed.geometry.brep,*e.sourceFace);
     if(e.sourceVertex) out << "Source vertex ordinal: " << *e.sourceVertex << '\n';
     if(e.kind == Kind::Vertex) {

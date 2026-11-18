@@ -6,6 +6,8 @@
 #include <QMenu>
 #include <QInputDialog>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFileInfo>
 #include <QTextBrowser>
 #include <QLineEdit>
 #include <QHBoxLayout>
@@ -105,7 +107,7 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     sidebarLayout->setContentsMargins(0,0,0,0);
     tree_ = new QTreeWidget;
     tree_->setObjectName("entities");
-    tree_->setHeaderLabels({"Entity / source identity", "User tag"});
+    tree_->setHeaderLabel("Entity / source identity");
     tree_->setSelectionMode(QAbstractItemView::SingleSelection);
     auto* elementsLabel=new QLabel("List of Elements");
     elementsLabel->setBuddy(tree_);
@@ -193,12 +195,17 @@ bool Window::eventFilter(QObject* watched,QEvent* event) {
 }
 void Window::setLoadStatus(const QString& text) {
     status_->setText(text);
-    status_->setToolTip("<qt>"+text.toHtmlEscaped()+"</qt>");
+    auto tooltip="<qt>"+text.toHtmlEscaped();
+    if(!activePath_.isEmpty())
+        tooltip+="<div style=\"white-space: pre-wrap;\">"+activePath_.toHtmlEscaped()+"</div>";
+    status_->setToolTip(tooltip+"</qt>");
 }
 void Window::fail(const std::string& message) {
     viewport_->showDisplay(nullptr);
     viewport_->hide();
     document_.reset();
+    activePath_.clear();
+    setWindowTitle("GEO-Visualiser");
     display_.components.clear();
     display_.context.clear();
     items_.clear();
@@ -252,6 +259,8 @@ bool Window::load(const std::filesystem::path& file) {
     showComponents();
     viewport_->resetCamera();
     if(!viewport_->error().empty()) return false;
+    activePath_=QDir::toNativeSeparators(QFileInfo(QString::fromStdU16String(file.u16string())).absoluteFilePath());
+    setLoadStatus(status_->text());
     setWindowTitle("GEO-Visualiser | "+QString::fromStdU16String(file.filename().u16string()));
     return true;
 }
@@ -289,7 +298,7 @@ void Window::showComponents() {
                 if(e.sourceFace) label += " | source face " + std::to_string(*e.sourceFace);
                 if(e.sourceVertex) label += " | source vertex " + std::to_string(*e.sourceVertex);
                 if(e.sourceEndpoints) label += " | source " + std::to_string(e.sourceEndpoints->first) + "-" + std::to_string(e.sourceEndpoints->second);
-                auto* item = new QTreeWidgetItem(root,{QString::fromStdString(label),QString::fromStdString(tags_.get(e.id))});
+                auto* item = new QTreeWidgetItem(root,{QString::fromStdString(label)});
                 item->setData(0,Qt::UserRole,QString::fromStdString(e.id));
                 items_[e.id] = item;
             }
@@ -358,7 +367,6 @@ void Window::tagMenu(const QPoint& point) {
         value=dialog.textValue();
     } else if(action!=remove) return;
     tags_.set(id,value.toStdString());
-    items_.at(id)->setText(1,QString::fromStdString(tags_.get(id)));
 }
 void Window::settings() {
     AppearanceDialog dialog(viewport_->appearance(),preferences_,[this](const Appearance& a) { viewport_->setAppearance(a); },this);
@@ -368,12 +376,15 @@ void Window::help() {
     QDialog dialog(this);dialog.setObjectName("helpDialog");dialog.setWindowTitle("Help — GEO-Visualiser");dialog.resize(640,620);
     auto* layout=new QVBoxLayout(&dialog);
     auto* text=new QTextBrowser;text->setObjectName("helpText");
-    text->setHtml(QString::fromUtf8(R"(<h2>Inspect geometry</h2>
+    text->setHtml(QString::fromUtf8(R"(<p>GEO-Visualiser inspects geometry in STRAKON SMD files. It lets you
+examine source entities and compare the validated solid with its derived principal extrusion candidate, extensions and reductions.
+It does not edit the source file.</p>
+<h2>Inspect geometry</h2>
 <p>Choose <b>☰ → File → Open SMD…</b> or press <b>Ctrl+O</b>. The title shows the active file.
 A cancelled or failed open keeps the current view.</p>
 <p>The command bar contains Representation, Isolate, Pick, Display style and Fit.
 Drag the divider between the left sidebar and Canvas to resize them. The List of Elements is above Properties.
-Hover over the bottom-left status text to read the full component summary and any body volumes.</p>
+Hover over the bottom-left status text to read the full SMD path, component summary and any body volumes.</p>
 <p><b>S</b>: validated solid; <b>B</b>: principal extrusion candidate;
 <b>A</b>: extensions (S ∖ B); <b>R</b>: reductions (B ∖ S), showing missing material.
 These keys match Representation. Converted faces remain a face collection.
@@ -387,13 +398,20 @@ Cube clicks preserve the projection and selected entity.</p>
 Left click picks using the Vertex, Edge, Face or Body mode. The tree and viewport share selection.
 Click background to clear selection. Isolate limits the active component.</p>
 <h3>Coordinates and scale</h3>
-<p>Coordinates are <b>raw source-local millimetres</b>. No B-rep, element or project placement is applied.
+<p>Coordinates are <b>raw source-local millimetres</b>. Source ordinals are <b>zero-based</b>.
+No B-rep, element or project placement is applied.
 In Perspective, the scale marked <b>“at target”</b> applies at the camera target plane;
 objects at other depths have a different apparent scale.</p>
+<h3>Recorded source plane</h3>
+<p><i>ax + by + cz + d</i> = 0</p>
+<p>(<i>x, y, z</i>) is a point in raw source-local millimetres. (<i>a, b, c</i>) is the recorded normal vector
+and need not be a unit vector. <i>d</i> is the equation constant. Computing a distance requires the normal length.
+For a nonzero normal, the signed distance in the direction of that normal is</p>
+<p>(<i>ax + by + cz + d</i>) / √(<i>a</i>² + <i>b</i>² + <i>c</i>²).</p>
 <h3>Session tags</h3>
 <p>Right-click an entity row and choose Add tag, Edit tag or Remove tag. The action affects that row,
 even if another row is selected. Grouping rows and blank space have no tag actions.
-Cancel leaves the tag unchanged. Tags appear in the User tag column.</p>
+Edit tag opens with the current value. Cancel leaves the tag unchanged.</p>
 <p>Tags belong to the canonical file path, exact file bytes and viewer entity identity.
 They survive reopening that unchanged file in this window/run; other paths or changed bytes have separate tags.
 Closing the session clears tags. A tag is not SMD metadata and never changes source evidence.</p>
@@ -403,7 +421,7 @@ Show context displays passive outlines of the other partial bodies and is on by 
 0% transparency is opaque. The factory transparency is 72%.
 Default values previews the factory settings. OK saves preferences for the next launch.
 Cancel, Escape or closing Settings restores the preferences that were active when it opened.</p>
-<h3>About</h3><p>GEO-Visualiser — native SMD geometry inspector<br>Build: %1<br>OCCT: %2</p>)")
+<h3>About</h3><p>GEO-Visualiser — native SMD geometry inspector<br>Author: Dirk H. Urbanek<br>Build: %1<br>OCCT: %2</p>)")
         .arg(QString::fromUtf8(inspectorBuild).toHtmlEscaped(),QString::fromLatin1(OCC_VERSION_COMPLETE)));
     layout->addWidget(text);
     auto* buttons=new QDialogButtonBox(QDialogButtonBox::Close);

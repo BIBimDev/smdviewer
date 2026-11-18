@@ -26,6 +26,7 @@
 #include <QTimer>
 #include <QProcess>
 #include <QCheckBox>
+#include <QTextDocument>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QThread>
@@ -257,7 +258,12 @@ struct Copies {
     explicit Copies(const std::filesystem::path& samples) {
         require(directory.isValid(),"temporary directory");
         const auto root=std::filesystem::path(directory.path().toStdU16String());
-        first=root/std::filesystem::path(u"outside space ü 柱")/std::filesystem::path(u"same name ü 柱.smd");
+#ifdef _WIN32
+        const auto outside=u"outside  space ü 柱 &";
+#else
+        const auto outside=u"outside  space ü 柱 & <b>";
+#endif
+        first=root/std::filesystem::path(outside)/std::filesystem::path(u"same name ü 柱.smd");
         second=root/"other"/std::filesystem::path(u"same name ü 柱.smd");
         bad=root/"unsupported input.smd";
         std::filesystem::create_directories(first.parent_path());
@@ -300,6 +306,16 @@ void documentChecks(const std::filesystem::path& samples) {
 }
 QString titleFor(const std::filesystem::path& file) {
     return "GEO-Visualiser | "+QString::fromStdU16String(file.filename().u16string());
+}
+QString statusTooltipText(const QLabel& status) {
+    QTextDocument tooltip;
+    tooltip.setHtml(status.toolTip());
+    return tooltip.toPlainText();
+}
+QTreeWidgetItem* firstFaceRow(QTreeWidget* tree) {
+    for(QTreeWidgetItemIterator it(tree);*it;++it)
+        if((*it)->data(0,Qt::UserRole).toString().contains("/Face/")) return *it;
+    throw std::runtime_error("UI face absent");
 }
 void workspaceChecks(Window& window,Viewport& canvas) {
     auto* central=window.centralWidget();
@@ -373,10 +389,15 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     auto* reps=window.findChild<QComboBox*>("representation");
     auto* component=window.findChild<QComboBox*>("component");
     auto* tree=window.findChild<QTreeWidget*>("entities");
-    const auto tagText=[&] { return tree->currentItem()?tree->currentItem()->text(1):QString{}; };
+    const auto tagText=[&] { return editSessionTag(tree,tree->currentItem(),{},true); };
     const auto setTag=[&](const QString& value) { editSessionTag(tree,tree->currentItem(),value); };
     auto* details=window.findChild<QPlainTextEdit*>("details");
     auto* status=window.findChild<QLabel*>("status");
+    const auto checkActivePath=[&](const std::filesystem::path& file) {
+        const auto path=QDir::toNativeSeparators(QString::fromStdU16String(file.u16string()));
+        require(statusTooltipText(*status)==status->text()+"\n"+path,
+                "status tooltip shows the full current summary and literal opened path: "+pathText(file));
+    };
     auto* projection=window.findChild<QLabel*>("projection");
     auto* pickMode=window.findChild<QComboBox*>("pick");
     Viewport* viewport=nullptr;
@@ -392,6 +413,7 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     require(!window.findChild<QComboBox*>("specimen") && !window.findChild<QLabel*>("filename") &&
             reps->currentIndex()==1 && window.windowTitle()==titleFor(fixtures[0]),
             "startup loads plain S and sets the title: "+window.windowTitle().toStdString()+" | "+status->text().toStdString());
+    checkActivePath(samples/fixtures[0]);
     const auto sameCamera=[](const auto& a,const auto& b) {
         return a->ProjectionType()==b->ProjectionType() && a->Eye().Distance(b->Eye())==0 &&
             a->Center().Distance(b->Center())==0 && a->Direction().IsEqual(b->Direction(),0) &&
@@ -408,6 +430,7 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
         bool handled=false;
         bool menuActivated=false;
         const auto titleBefore=window.windowTitle();
+        const auto tooltipBefore=status->toolTip();
         std::string error;
         QString diagnostic;
         QTimer driver;
@@ -415,7 +438,8 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
         QObject::connect(&driver,&QTimer::timeout,[&] {
             if(auto* dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget()); dialog && !handled) {
                 handled=true;
-                require(window.windowTitle()==titleBefore,"open dialog preserves the active title until success");
+                require(window.windowTitle()==titleBefore && status->toolTip()==tooltipBefore,
+                        "open dialog preserves the title and active path until success");
                 if(std::filesystem::path(dialog->directory().absolutePath().toStdU16String())!=samples) {
                     error="dialog must start in checkout public/samples";dialog->reject();return;
                 }
@@ -434,7 +458,8 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
                 dialog->findChild<QLineEdit*>("fileNameEdit")->setText(QString::fromStdU16String(file.u16string()));
                 QMetaObject::invokeMethod(dialog,"accept",Qt::DirectConnection);
             } else if(auto* message=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
-                require(window.windowTitle()==titleBefore,"failed-open warning preserves the active title");
+                require(window.windowTitle()==titleBefore && status->toolTip()==tooltipBefore,
+                        "failed-open warning preserves the title and active path");
                 diagnostic=message->text();message->accept();
             } else if(via==OpenVia::Menu && !menuActivated && fileMenu->isVisible()) {
                 menuActivated=true;
@@ -466,20 +491,19 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
         require(handled && (via==OpenVia::Shortcut || menuActivated) && error.empty(),
                 error.empty()?"file dialog exercised by the requested entry point":error);
         require(window.windowTitle()==(cancel || !diagnostic.isEmpty()?titleBefore:titleFor(file)),"title tracks successful opens only");
+        if(cancel || !diagnostic.isEmpty()) require(status->toolTip()==tooltipBefore,"cancelled or rejected open retains the tooltip");
+        else checkActivePath(file);
         return diagnostic;
     };
-    const auto selectFace=[&] {
-        for(QTreeWidgetItemIterator it(tree);*it;++it) if((*it)->data(0,Qt::UserRole).toString().contains("/Face/")) {tree->setCurrentItem(*it);return;}
-        throw std::runtime_error("UI face absent");
-    };
+    const auto selectFace=[&] { tree->setCurrentItem(firstFaceRow(tree)); };
     const auto shortcutParity=[&] {
         const auto state=[&] {
             QString result=QString::number(reps->currentIndex())+"|"+QString::number(component->currentIndex())+"|"+
                 QString::number(component->count())+"|"+QString::number(component->isEnabled())+"|"+
                 QString::number(pickMode->currentIndex())+"|"+QString::fromStdString(viewport->selectedId())+"|"+
-                tagText()+"|"+details->toPlainText()+"|"+status->text();
+                details->toPlainText()+"|"+status->text()+"|"+status->toolTip();
             for(QTreeWidgetItemIterator it(tree);*it;++it)
-                result+="|"+(*it)->text(0)+"|"+(*it)->text(1)+"|"+(*it)->data(0,Qt::UserRole).toString();
+                result+="|"+(*it)->text(0)+"|"+(*it)->data(0,Qt::UserRole).toString();
             return result;
         };
         for(bool perspective:{false,true}) {
@@ -518,7 +542,7 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
         require(reps->currentIndex()==1 && component->currentIndex()==0 && pickMode->currentIndex()==2,"successful open resets S/All/Face");
         require(!viewport->perspective() && projection->text()=="O · Orthographic","successful open resets actual Orthographic and indicator");
         require(!tree->currentItem() && tree->selectedItems().empty() && viewport->selectedId().empty(),"successful open clears tree and viewport owner");
-        require(tagText().isEmpty() && !details->toPlainText().contains("Viewer ID"),"successful open clears details and active entity");
+        require(!details->toPlainText().contains("Viewer ID"),"successful open clears details and active entity");
         require(viewport->error().empty(),viewport->error());
     };
     // Check the actual Window callbacks in both directions for every mode.
@@ -531,6 +555,29 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
             tree->setCurrentItem(*it);selected=true;break;
         }
         require(selected && viewport->selectedId()==e.id && pickMode->currentIndex()==static_cast<int>(kind),"tree-to-viewport UI synchronization");
+        const auto metadata=details->toPlainText();
+        require(metadata.startsWith("Viewer ID (session scope): "+QString::fromStdString(e.id)+"\n") &&
+                !metadata.contains("\nEntity:") && !metadata.contains("\nCoordinates:") &&
+                !metadata.contains("\nSource ordinals:"),"Properties shows Viewer ID without repeating Help conventions");
+        std::ostringstream evidence;
+        evidence<<std::setprecision(17);
+        if(kind==Kind::Vertex) {
+            require(e.sourceVertex.has_value(),"fixture vertex has a source ordinal");
+            const auto point=BRep_Tool::Pnt(TopoDS::Vertex(e.original));
+            evidence<<"Source vertex ordinal: "<<*e.sourceVertex<<"\nXYZ (mm): "<<point.X()<<' '<<point.Y()<<' '<<point.Z()<<'\n';
+        } else if(kind==Kind::Face) {
+            require(e.sourceFace.has_value(),"fixture face has a source ordinal");
+            require(metadata.contains(QString("Source face ordinal: %1\n").arg(*e.sourceFace)) &&
+                    metadata.contains("Ordered source loop:"),"Properties shows source face identity and ordered loop");
+            const auto& plane=document->parsed.geometry.brep.faces.at(*e.sourceFace).plane;
+            require(plane.has_value(),"fixture face has a recorded plane");
+            evidence<<"Source plane (a b c d): "<<plane->a<<' '<<plane->b<<' '<<plane->c<<' '<<plane->d<<'\n';
+        } else if(kind==Kind::Edge) {
+            require(metadata.contains("Source edge endpoints: ") && metadata.contains("Edge use: source face "),
+                    "Properties shows source edge endpoints and incidences");
+        }
+        require(metadata.contains(QString::fromStdString(evidence.str())) && metadata.contains("Source B-rep vertex-count token index: "),
+                "Properties retains recorded coordinates, plane coefficients and provenance where applicable");
         bool picked=false;
         for(const auto& c:display.components) for(const auto& probe:c.entities) if(probe.kind==Kind::Vertex) {
             const auto pixel=viewport->project(BRep_Tool::Pnt(TopoDS::Vertex(probe.display)));
@@ -559,10 +606,10 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     for(int i:{1,2,0}) {
         style->setCurrentIndex(i);
         require(viewport->selectedId()==retainedId && tree->currentItem()==retainedRow &&
-                tree->currentItem()->text(1)=="camera tag" && tagText()=="camera tag" &&
                 details->toPlainText()==retainedDetails && pickMode->currentIndex()==2 &&
-                sameCamera(retainedCamera,viewport->camera()),"style control preserves face/tree/tag/details/camera/pick mode");
+                sameCamera(retainedCamera,viewport->camera()),"style control preserves face/tree/details/camera/pick mode");
     }
+    require(tagText()=="camera tag","style changes preserve the selected face tag");
     auto* settings=window.findChild<QAction*>("settingsAction");
     require(settings,"Settings action available");
     const auto editContext=[&](const auto& edit) {
@@ -591,11 +638,11 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
             require(viewport->appearance().showContext==show && visibleContextOutlines(*viewport)==(show?outlines:0),
                     "Show context changes the displayed outlines immediately");
             const auto currentCamera=viewport->camera();
-            require(viewport->selectedId()==id && tree->currentItem()==row && tagText()=="context tag" &&
+            require(viewport->selectedId()==id && tree->currentItem()==row &&
                     tree->topLevelItemCount()==roots && reps->currentIndex()==i && style->currentIndex()==i-2 &&
                     pickMode->currentIndex()==static_cast<int>(Kind::Face) && sameCamera(beforeToggle,currentCamera) &&
                     beforeToggle->ZNear()==currentCamera->ZNear() && beforeToggle->ZFar()==currentCamera->ZFar() &&
-                    beforeToggle->Aspect()==currentCamera->Aspect(),"Show context preserves camera, owner, tree, tag, pick mode and style");
+                    beforeToggle->Aspect()==currentCamera->Aspect(),"Show context preserves camera, owner, tree, pick mode and style");
         };
         editContext([&](QDialog& dialog,QCheckBox& context) {
             context.click();checkContext(false);
@@ -606,6 +653,7 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
             if(i==4) dialog.close();
         });
         checkContext(true);
+        require(tagText()=="context tag","Show context changes preserve the selected face tag");
     }
     editContext([&](QDialog& dialog,QCheckBox& context) {
         context.click();
@@ -649,7 +697,7 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
             orthographic->Center().Distance(perspective->Center())<1e-8 && std::abs(orthographic->Scale()-perspective->Scale())<1e-8,"P retains direction/up/target/scale");
     keyP(viewport);
     require(!viewport->perspective() && projection->text()=="O · Orthographic","second P returns Orthographic indicator");
-    require(viewport->selectedId()==cameraSelection && tree->currentItem()==cameraRow && tree->currentItem()->text(1)=="camera tag" &&
+    require(viewport->selectedId()==cameraSelection && tree->currentItem()==cameraRow &&
             tagText()=="camera tag" && details->toPlainText()==cameraDetails,"P twice preserves owner/tree/highlight/tag/details");
     editSessionTag(tree,tree->currentItem(),"",true,false,true);
     require(tagText()=="camera tag" && !viewport->perspective() && reps->currentIndex()==1 && viewport->selectedId()==cameraSelection,
@@ -664,6 +712,8 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     keyP(viewport);viewport->orient(V3d_XposYnegZpos);
     require(projection->text()=="P · Perspective","Perspective cube corner remains P");
     reps->setCurrentIndex(4);component->setCurrentIndex(1);selectFace();
+    checkActivePath(samples/fixtures[1]);
+    require(details->toPlainText().contains("Boolean ancestor: "),"reduction Properties retains recorded Boolean provenance");
     setTag("saved R tag");editSessionTag(tree,tree->currentItem(),"unsaved editor text",true);
     auto reduction=prepareDisplay(*loadDocument(samples/fixtures[1]),Representation::Reductions);
     navigation(*viewport,reduction);
@@ -674,8 +724,8 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     const auto previousDetails=details->toPlainText(), previousStatus=status->text();
     const auto retained=[&] {
         require(reps->currentIndex()==4 && component->currentIndex()==1 && pickMode->currentIndex()==2,"failed/cancelled open retains controls");
-        require(viewport->selectedId()==selected && tree->currentItem() && tree->currentItem()->text(1)=="saved R tag","failed/cancelled open retains selected owner and saved tag");
-        require(tagText()=="saved R tag" && details->toPlainText()==previousDetails && status->text()==previousStatus && camera()==previousCamera,"failed/cancelled open retains tag, details, status and camera");
+        require(viewport->selectedId()==selected && tree->currentItem(),"failed/cancelled open retains selected owner");
+        require(details->toPlainText()==previousDetails && status->text()==previousStatus && camera()==previousCamera,"failed/cancelled open retains details, status and camera");
         require(sameCamera(previousCameraState,viewport->camera()) && projection->text()=="P · Perspective","cancel/failure preserves complete camera and projection indicator");
         require(window.windowTitle()==titleFor(fixtures[1]),"failed/cancelled open retains the active title");
     };
@@ -683,6 +733,7 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     const auto diagnostic=openFile(copies.bad);retained();
     openFile({},true,OpenVia::Shortcut);retained();
     require(openFile(copies.bad,false,OpenVia::Shortcut)==diagnostic,"menu and Ctrl+O report the same failure");retained();
+    require(tagText()=="saved R tag","cancelled and rejected opens preserve the selected face tag");
     std::cerr<<"Failed-open actual dialog: "<<diagnostic.toStdString()<<'\n'
              <<"Failed-open expected full path: "<<QString::fromStdU16String(copies.bad.u16string()).toStdString()<<'\n';
     const auto expectedPath=QDir::fromNativeSeparators(QString::fromStdU16String(copies.bad.u16string()));
@@ -698,7 +749,8 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
         require(!viewport->select(selected),"old R pick owner removed");
     }
     require(openFile(copies.first).isEmpty(),"outside copy with spaces/non-ASCII path");reset();
-    require(window.windowTitle()==titleFor(copies.first),"active Unicode basename in title");
+    const auto sharedTitle=window.windowTitle();
+    require(sharedTitle==titleFor(copies.first),"active Unicode basename in title");
     selectFace();setTag("source-face-tag");
     reps->setCurrentIndex(2);selectFace();require(tagText().isEmpty(),"S tag cannot leak onto coincident B face");
     navigation(*viewport,display);
@@ -706,24 +758,33 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     require(openFile(copies.first).isEmpty(),"same-file reopen");reset();
     require(camera()==initialCamera,"same-file reopen resets camera");
     selectFace();require(tagText()=="source-face-tag","same unchanged file retains saved tag");
-    setTag("renamed");require(tree->currentItem()->text(1)=="renamed","tag rename");
-    editSessionTag(tree,tree->currentItem(),"",false,true);require(tagText().isEmpty() && tree->currentItem()->text(1).isEmpty(),"tag removal");
+    setTag("renamed");require(tagText()=="renamed","tag rename");
+    editSessionTag(tree,tree->currentItem(),{},false,true);require(tagText().isEmpty(),"tag removal");
     setTag("expires");
+    const auto firstTooltip=status->toolTip();
     require(openFile(copies.second).isEmpty(),"same basename other directory");reset();
+    require(window.windowTitle()==sharedTitle && status->toolTip()!=firstTooltip,"same basename opens have distinct full paths in the tooltip");
     selectFace();require(tagText().isEmpty(),"same basename tags isolated in UI");
     require(openFile(copies.first).isEmpty(),"reopen first copy");selectFace();require(tagText()=="expires","first file tags retained");
     copies.change();
     require(openFile(copies.first).isEmpty(),"changed content same path");reset();
     selectFace();require(tagText().isEmpty(),"changed file tags isolated in UI");
+    window.screen()->grabWindow(window.winId()).save(QString::fromStdString((std::filesystem::temp_directory_path()/"geo-visualiser-desktop.png").string()));
+    const std::string rendererError="Fatal viewport diagnostic <driver> & context";
+    viewport->failed(rendererError);
+    QApplication::processEvents();
+    require(window.windowTitle()=="GEO-Visualiser" && viewport->isHidden() && viewport->selectedId().empty() &&
+            tree->topLevelItemCount()==0,"fatal viewport cleanup resets title, selection and scene");
+    require(status->text()==QString::fromStdString("Unavailable: "+rendererError) &&
+            statusTooltipText(*status)==status->text(),"fatal cleanup keeps the diagnostic and clears the active path");
     Window fresh(samples);fresh.show();QApplication::processEvents();
     auto* freshTree=fresh.findChild<QTreeWidget*>("entities");
-    for(QTreeWidgetItemIterator it(freshTree);*it;++it) require((*it)->text(1).isEmpty(),"fresh window has no persisted tags");
+    require(editSessionTag(freshTree,firstFaceRow(freshTree),{},true).isEmpty(),"fresh window has no persisted tags");
     Window missing(samples/"missing-inspector-fixtures");missing.show();QApplication::processEvents();
     require(missing.findChild<QTreeWidget*>("entities")->topLevelItemCount()==0,"startup failure exposes no results");
     require(missing.findChild<QLabel*>("status")->text().contains("read:"),"visible missing-fixture stage diagnostic");
     require(missing.windowTitle()=="GEO-Visualiser","failed startup keeps the unloaded title");
-    window.screen()->grabWindow(window.winId()).save(QString::fromStdString((std::filesystem::temp_directory_path()/"geo-visualiser-desktop.png").string()));
-    std::cout<<"PASS — Qt dialog, document reset, failure/cancel preservation and tag isolation\n";
+    std::cout<<"PASS — file identity, fatal cleanup, Properties evidence and context-menu tag isolation\n";
 }
 }
 int main(int argc,char** argv) {
@@ -753,7 +814,7 @@ int main(int argc,char** argv) {
             require(viewport && !viewport->appearance().showContext,"restart applies the saved context preference");
             auto* tree=fresh.findChild<QTreeWidget*>("entities");
             require(tree->topLevelItemCount()==1,"restart has S");
-            for(QTreeWidgetItemIterator it(tree);*it;++it) require((*it)->text(1).isEmpty(),"restart has no saved tags");
+            require(editSessionTag(tree,firstFaceRow(tree),{},true).isEmpty(),"restart has no saved tags");
             return 0;
         }
         cameraMappingChecks();

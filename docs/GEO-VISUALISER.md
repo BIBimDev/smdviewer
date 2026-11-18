@@ -45,17 +45,20 @@ reconfigure after moving the checkout. The original combined filename is
 Each open rereads the file and runs the full native pipeline. Only after the
 pipeline and initial S display data are ready does the new document replace the
 old one. Success resets S / All / Face, default camera orientation fitted to S,
-selection and metadata. Cancel retains the title and view. A failed read, parse,
-geometry stage (including unsupported B), or display preparation reports the
-attempted path and stage while retaining the previous title, document and view.
+selection and metadata. Cancel retains the active path, title and view. A failed
+read, parse, geometry stage (including unsupported B), or display preparation
+reports the attempted path and stage while retaining the active path, title and
+view. If a fatal viewport error clears the active document, the title resets to
+`GEO-Visualiser` and the status tooltip shows the failure diagnostic.
 
 The single command row contains Representation, Isolate, Pick, Display style
 and Fit, with **☰** at the far right. Hover over the Representation and Display
 style dropdowns for their labels. Drag the divider to resize the sidebar and
 Canvas. The sidebar places the List of Elements above Properties. The status
 line shows the load state and representation summary at bottom left and the
-active projection at bottom right. Hover over the summary for its full text,
-including any A/R component volumes.
+active projection at bottom right. Hover over the summary for the full path of
+the opened SMD, the complete component summary, and any A/R component volumes.
+The tooltip retains the path when you change representation or isolate a component.
 
 **☰ → Settings → Show context** displays passive outlines of the other partial
 bodies. It starts on when the profile has no saved value. Changes preview
@@ -79,12 +82,14 @@ positive body displaying missing material. There is no reconstructed S' view.
 - A click and a tree selection share one selected AIS owner, highlighted yellow.
   Changing representation, file, isolation or pick mode clears selection.
   Removed components are also removed from the OCCT selector.
-- Metadata shows raw source-local millimetres and zero-based source ordinals.
-  No B-rep, element or project placement is applied, and no shape is recentered.
-- Right-click an entity row and choose Add tag / Edit tag; Remove tag deletes
-  it. The context action targets the invoked row. Cancel leaves its tag unchanged. Tags survive reopening the same canonical file path with identical bytes
-  in the same window/run. Other paths and changed bytes have separate tags. Restart clears
-  them. They are not source names, source identities or geometry edits.
+- Properties shows the selected entity's viewer ID and applicable source evidence,
+  including coordinates, ordinals, recorded plane coefficients and provenance.
+  Help explains raw source-local millimetres, zero-based source ordinals and how
+  to compute signed distance from a recorded source plane.
+- Right-click an entity row to add, edit or remove its tag. **Edit tag** opens
+  with the current value for that row. Cancel retains the value. Tags survive
+  reopening the same canonical file path with identical bytes in the same
+  window. Other paths and changed bytes have separate tags. Restart clears them.
 
 ## Evidence and display architecture
 
