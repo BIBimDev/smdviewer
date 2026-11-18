@@ -22,6 +22,8 @@ public:
     void showDisplay(const Display* display, int isolated = -1, bool refit = true);
     void setDisplayStyle(DisplayStyle);
     void setShowContext(bool);
+    void setAppearance(const Appearance&);
+    Appearance appearance() const { return {palette_,transparency_}; }
     void setPickMode(Kind);
     bool select(const std::string& id);
     void fit();
@@ -78,6 +80,7 @@ private:
     DisplayStyle style_ = DisplayStyle::Shaded;
     bool showContext_ = true;
     Palette palette_=factoryPalette;
+    double transparency_=factoryTransparency;
     occ::handle<AIS_InteractiveContext> context_;
     occ::handle<V3d_View> view_;
     occ::handle<ViewCube> cube_;

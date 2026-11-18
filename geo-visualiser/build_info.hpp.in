@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr const char* inspectorBuild="GEO-VIS-REFINE-03 | @inspector_revision@ | configured @inspector_build_time@ UTC";

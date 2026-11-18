@@ -3,8 +3,8 @@
 #include <Quantity_Color.hxx>
 
 namespace inspector {
-// Linear RGB defaults, matching the original filled B/A/R colours. Future sRGB
-// settings must convert at the UI boundary (Quantity_TOC_sRGB), not reinterpret
+// Linear RGB defaults, matching the original filled B/A/R colours. sRGB
+// settings convert at the UI boundary, never reinterpret
 // these components as sRGB. Wire accents are derived from these same colours.
 struct Palette {
     Quantity_Color b{0.57,0.59,0.61,Quantity_TOC_RGB};
@@ -27,4 +27,8 @@ struct Palette {
 };
 inline const Palette factoryPalette{};
 inline constexpr double factoryTransparency=0.72;
+struct Appearance {
+    Palette palette=factoryPalette;
+    double transparency=factoryTransparency;
+};
 }

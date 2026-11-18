@@ -1,5 +1,7 @@
 # GEO-Visualiser — native inspection
 
+Current menu, appearance preferences and session tags: [GEO-VIS-REFINE-03](GEO-VIS-REFINE-03.md).
+
 Current camera controls and Kubuntu handoff: [GEO-VIS-CAMERA-01](GEO-VIS-CAMERA-01.md).
 
 Current file-open/reset behaviour and Kubuntu handoff: [GEO-VIS-OPEN-01](GEO-VIS-OPEN-01.md).
@@ -42,7 +44,7 @@ reconfigure after moving the checkout. The original combined filename is
 Each open rereads the file and runs the full native pipeline. Only after the
 pipeline and initial S display data are ready does the new document replace the
 old one. Success resets S / All / Face, default camera orientation fitted to S,
-selection, metadata and the active tag editor. Cancel changes nothing. A failed
+selection and metadata. Cancel changes nothing. A failed
 read, parse, geometry stage (including unsupported B), or display preparation
 reports the attempted path and stage while retaining the previous document/view.
 
@@ -63,8 +65,8 @@ positive body displaying missing material. There is no reconstructed S' view.
   Removed components are also removed from the OCCT selector.
 - Metadata shows raw source-local millimetres and zero-based source ordinals.
   No B-rep, element or project placement is applied, and no shape is recentered.
-- Select an entity, enter a tag and press Add / rename (or Enter); Remove deletes
-  it. Tags survive reopening the same canonical file path with identical bytes
+- Right-click an entity row and choose Add tag / Edit tag; Remove tag deletes
+  it. The context action targets the invoked row. Cancel leaves its tag unchanged. Tags survive reopening the same canonical file path with identical bytes
   in the same window/run. Other paths and changed bytes have separate tags. Restart clears
   them. They are not source names, source identities or geometry edits.
 

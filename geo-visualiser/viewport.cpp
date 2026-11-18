@@ -123,7 +123,7 @@ int Viewport::mode() const {
 }
 void Viewport::applyStyle(const occ::handle<AIS_Shape>& ais) {
     context_->SetDisplayMode(ais,style_==DisplayStyle::Wireframe?AIS_WireFrame:AIS_Shaded,false);
-    context_->SetTransparency(ais,style_==DisplayStyle::Transparent?factoryTransparency:0.0,false);
+    context_->SetTransparency(ais,style_==DisplayStyle::Transparent?transparency_:0.0,false);
 }
 void Viewport::setDisplayStyle(DisplayStyle style) {
     style_=style;
@@ -135,6 +135,24 @@ void Viewport::setDisplayStyle(DisplayStyle style) {
             viewer->SetZLayerSettings(selectionLayer_,settings);
         }
         for(const auto& object:objects_) applyStyle(object.ais);
+        redraw();
+    });
+}
+void Viewport::setAppearance(const Appearance& appearance) {
+    palette_=appearance.palette;transparency_=appearance.transparency;
+    guard([&] {
+        for(const auto& object:objects_) {
+            const auto& ais=object.ais;
+            context_->SetColor(ais,palette_.surface(display_->representation),false);
+            // AIS SetColor also recolours face boundaries; retain the filled-style black edges.
+            ais->Attributes()->FaceBoundaryAspect()->SetColor(Quantity_NOC_BLACK);
+            const auto wire=palette_.wire(display_->representation);
+            ais->Attributes()->WireAspect()->SetColor(wire);
+            ais->Attributes()->FreeBoundaryAspect()->SetColor(wire);
+            ais->Attributes()->UnFreeBoundaryAspect()->SetColor(wire);
+            context_->SetTransparency(ais,style_==DisplayStyle::Transparent?transparency_:0.0,false);
+            context_->Redisplay(ais,false);
+        }
         redraw();
     });
 }

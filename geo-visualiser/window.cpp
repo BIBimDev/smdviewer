@@ -1,4 +1,13 @@
 #include "window.hpp"
+#include "appearance_settings.hpp"
+#include "build_info.hpp"
+#include <Standard_Version.hxx>
+#include <QToolButton>
+#include <QMenu>
+#include <QInputDialog>
+#include <QDialogButtonBox>
+#include <QTextBrowser>
+#include <QLineEdit>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QPushButton>
@@ -18,6 +27,7 @@
 
 namespace inspector {
 Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
+    preferences_.setFallbacksEnabled(false);
     setWindowTitle("GEO-Visualiser | Native OCCT geometry inspector");
     resize(1400,900);
     auto* central = new QWidget;
@@ -34,6 +44,14 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
         controls->addWidget(result);
         return result;
     };
+    auto* menuButton=new QToolButton;
+    menuButton->setText("☰");menuButton->setAccessibleName("Menu");menuButton->setToolTip("Menu");
+    menuButton->setObjectName("mainMenu");menuButton->setPopupMode(QToolButton::InstantPopup);
+    auto* menu=new QMenu(menuButton);menuButton->setMenu(menu);
+    auto* settingsAction=menu->addAction("Settings…",this,[this] { settings(); });
+    settingsAction->setObjectName("settingsAction");
+    auto* helpAction=menu->addAction("Help",this,[this] { help(); });helpAction->setObjectName("helpAction");
+    controls->addWidget(menuButton);
     auto* openButton = new QPushButton("Open SMD…");
     openButton->setObjectName("openSmd");
     controls->addWidget(openButton);
@@ -80,25 +98,15 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     details_->setObjectName("details");
     details_->setReadOnly(true);
     sidebarLayout->addWidget(details_,1);
-    auto* tagLayout = new QHBoxLayout;
-    tag_ = new QLineEdit;
-    tag_->setObjectName("tag");
-    tag_->setPlaceholderText("Session tag for selected entity");
-    auto* saveTag = new QPushButton("Add / rename");
-    saveTag->setObjectName("saveTag");
-    auto* removeTag = new QPushButton("Remove");
-    removeTag->setObjectName("removeTag");
-    tagLayout->addWidget(tag_);
-    tagLayout->addWidget(saveTag);
-    tagLayout->addWidget(removeTag);
-    sidebarLayout->addLayout(tagLayout);
+    tree_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(tree_,&QTreeWidget::customContextMenuRequested,this,&Window::tagMenu);
     split->addWidget(sidebar);
     viewport_ = new Viewport;
+    viewport_->setAppearance(loadAppearance(preferences_));
     connect(style,&QComboBox::currentIndexChanged,this,[this](int i) { viewport_->setDisplayStyle(static_cast<DisplayStyle>(i)); });
     connect(context,&QCheckBox::toggled,this,[this](bool show) { viewport_->setShowContext(show); });
     split->addWidget(viewport_);
     split->setSizes({440,960});
-    layout->addWidget(new QLabel("Raw source-local mm | P: projection | Cube: direction | Left drag: orbit | Right/middle drag: pan | Wheel: zoom | Click: pick | Tags last for this run"));
     connect(openButton,&QPushButton::clicked,this,[&] { open(); });
     connect(representation_,&QComboBox::currentIndexChanged,this,[&] { representation(); });
     connect(component_,&QComboBox::currentIndexChanged,this,[&] { showComponents(); });
@@ -110,9 +118,6 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     connect(tree_,&QTreeWidget::currentItemChanged,this,[&](QTreeWidgetItem* item) {
         select(item ? item->data(0,Qt::UserRole).toString().toStdString() : "",false);
     });
-    connect(saveTag,&QPushButton::clicked,this,[&] { tag(false); });
-    connect(removeTag,&QPushButton::clicked,this,[&] { tag(true); });
-    connect(tag_,&QLineEdit::returnPressed,this,[&] { tag(false); });
     projection_=new QLabel;
     projection_->setObjectName("projection");
     statusBar()->addPermanentWidget(projection_);
@@ -171,7 +176,6 @@ void Window::fail(const std::string& message) {
     items_.clear();
     { QSignalBlocker block(tree_); tree_->clear(); }
     selected_.clear();
-    tag_->clear(); tag_->setEnabled(false);
     status_->setText(QString::fromStdString("Unavailable: " + message));
     details_->setPlainText("No validated results exposed. Check the fixture/dependency paths and restart after correcting the error.");
 }
@@ -300,15 +304,74 @@ void Window::select(const std::string& id, bool fromViewport) {
     details(e);
 }
 void Window::details(const Entity* e) {
-    tag_->setEnabled(e!=nullptr);
-    tag_->setText(e ? QString::fromStdString(tags_.get(e->id)) : "");
     details_->setPlainText(e && document_ ? QString::fromStdString(describe(*document_,*e)) :
         "Select one entity in the viewport or tree.\nConverted faces are a face collection, not a solid.\nB is a derived candidate. A and R retain recorded Boolean ancestry.\nSource identity, viewer ID, derived lineage and user tags are separate.");
 }
-void Window::tag(bool remove) {
-    if(selected_.empty()) return;
-    tags_.set(selected_,remove ? "" : tag_->text().toStdString());
-    items_.at(selected_)->setText(1,QString::fromStdString(tags_.get(selected_)));
-    details(entity(selected_));
+void Window::tagMenu(const QPoint& point) {
+    auto* row=tree_->itemAt(point);
+    if(!row) return;
+    const auto id=row->data(0,Qt::UserRole).toString().toStdString();
+    if(!entity(id) || !items_.contains(id)) return;
+    // Capture the invoked identity, never the previously selected row.
+    const auto existing=QString::fromStdString(tags_.get(id));
+    QMenu menu(this);menu.setObjectName("tagContextMenu");
+    auto* edit=menu.addAction(existing.isEmpty()?"Add tag…":"Edit tag…");edit->setObjectName("editTagAction");
+    QAction* remove=nullptr;
+    if(!existing.isEmpty()) { remove=menu.addAction("Remove tag");remove->setObjectName("removeTagAction"); }
+    const auto action=menu.exec(tree_->viewport()->mapToGlobal(point));
+    if(!action) return;
+    QString value;
+    if(action==edit) {
+        QInputDialog dialog(this);dialog.setObjectName("sessionTagDialog");
+        dialog.setWindowTitle(existing.isEmpty()?"Add session tag":"Edit session tag");
+        dialog.setLabelText("User tag (this session only; not SMD metadata)");
+        dialog.setTextValue(existing);
+        if(dialog.exec()!=QDialog::Accepted) return;
+        value=dialog.textValue();
+    } else if(action!=remove) return;
+    tags_.set(id,value.toStdString());
+    items_.at(id)->setText(1,QString::fromStdString(tags_.get(id)));
+}
+void Window::settings() {
+    AppearanceDialog dialog(viewport_->appearance(),preferences_,[this](const Appearance& a) { viewport_->setAppearance(a); },this);
+    dialog.exec();
+}
+void Window::help() {
+    QDialog dialog(this);dialog.setObjectName("helpDialog");dialog.setWindowTitle("Help — GEO-Visualiser");dialog.resize(640,620);
+    auto* layout=new QVBoxLayout(&dialog);
+    auto* text=new QTextBrowser;text->setObjectName("helpText");
+    text->setHtml(QString::fromUtf8(R"(<h2>Inspect geometry</h2>
+<p><b>S</b>: validated solid; <b>B</b>: principal extrusion candidate;
+<b>A</b>: extensions (S ∖ B); <b>R</b>: reductions (B ∖ S), showing missing material.
+These keys match Representation. Converted faces remain a face collection.
+B/A/R are derived interpretations, not original source metadata.</p>
+<p><b>P</b> toggles Orthographic/Perspective; the status bar always shows the active projection.
+Shortcuts are inactive while typing or using a dialog.</p>
+<p><b>Orientation cube:</b> click a face centre for an axial view, an edge tile for an edge view,
+or a corner tile for an isometric view. Drag with the left button on the cube to orbit.
+Cube clicks preserve the projection and selected entity.</p>
+<p><b>Navigate:</b> left drag orbits; right/middle drag pans; wheel zooms. Fit frames the active geometry.
+Left click picks using the Vertex, Edge, Face or Body mode. The tree and viewport share selection.
+Click background to clear selection. Isolate limits the active component; Show context adds passive outlines.</p>
+<h3>Coordinates and scale</h3>
+<p>Coordinates are <b>raw source-local millimetres</b>. No B-rep, element or project placement is applied.
+In Perspective, the scale marked <b>“at target”</b> applies at the camera target plane;
+objects at other depths have a different apparent scale.</p>
+<h3>Session tags</h3>
+<p>Right-click an entity row and choose Add tag, Edit tag or Remove tag. The action affects that row,
+even if another row is selected. Grouping rows and blank space have no tag actions.
+Cancel leaves the tag unchanged. Tags appear in the User tag column.</p>
+<p>Tags belong to the canonical file path, exact file bytes and viewer entity identity.
+They survive reopening that unchanged file in this window/run; other paths or changed bytes have separate tags.
+Closing the session clears tags. A tag is not SMD metadata and never changes source evidence.</p>
+<h3>Appearance</h3>
+<p>Settings previews B/A/R sRGB colours and transparency in the current style. 0% is opaque;
+72% is the factory transparency. Default values previews the factory settings. OK saves appearance locally;
+Cancel, Escape or closing Settings restores its opening appearance. Tags and document state are not saved.</p>
+<h3>About</h3><p>GEO-Visualiser — native SMD geometry inspector<br>Build: %1<br>OCCT: %2</p>)")
+        .arg(QString::fromUtf8(inspectorBuild).toHtmlEscaped(),QString::fromLatin1(OCC_VERSION_COMPLETE)));
+    layout->addWidget(text);
+    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Close);
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);layout->addWidget(buttons);dialog.exec();
 }
 }

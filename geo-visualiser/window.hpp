@@ -4,7 +4,7 @@
 #include <QTreeWidget>
 #include <QComboBox>
 #include <QLabel>
-#include <QLineEdit>
+#include <QSettings>
 #include <QPlainTextEdit>
 
 namespace inspector {
@@ -21,7 +21,9 @@ private:
     void showComponents();
     void select(const std::string& id, bool fromViewport);
     void details(const Entity*);
-    void tag(bool remove);
+    void tagMenu(const QPoint&);
+    void settings();
+    void help();
     void fail(const std::string&);
     const Entity* entity(const std::string&) const;
     std::filesystem::path samples_;
@@ -34,7 +36,7 @@ private:
     QLabel* filename_;
     QTreeWidget* tree_;
     QPlainTextEdit* details_;
-    QLineEdit* tag_;
+    QSettings preferences_{QSettings::IniFormat,QSettings::UserScope,"BIBimDev","GEO-Visualiser"};
     QLabel* status_;
     QLabel* projection_;
     std::map<std::string,QTreeWidgetItem*> items_;

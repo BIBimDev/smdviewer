@@ -313,6 +313,60 @@ void hiddenFaceHighlightChecks(Viewport& v) {
     v.selectionChanged={};v.showDisplay(nullptr);
     std::cout<<"PASS — hidden rear fill occluded in Shaded, exposed without reselecting, overlay styles and coincident fill retained\n";
 }
+void appearanceRenderChecks(Viewport& v,const Document& document) {
+    const auto original=v.appearance();
+    Appearance changed=original;
+    changed.palette.b=Quantity_Color(0.1,0.7,0.2,Quantity_TOC_sRGB);
+    changed.palette.a=Quantity_Color(0.8,0.3,0.2,Quantity_TOC_sRGB);
+    changed.palette.r=Quantity_Color(0.2,0.3,0.9,Quantity_TOC_sRGB);
+    changed.transparency=0.31;
+    for(const auto representation:{Representation::Candidate,Representation::Extensions,Representation::Reductions}) {
+        auto display=prepareDisplay(document,representation);
+        v.showDisplay(&display,display.components.empty()?-1:0);v.resetCamera();
+        if(display.components.empty()) {v.setAppearance(changed);v.setAppearance(original);v.showDisplay(nullptr);continue;}
+        v.select("");v.setDisplayStyle(DisplayStyle::Shaded);
+        const auto opening=capture(v,"appearance-opening-"+std::to_string(int(representation)));
+        for(const auto style:{DisplayStyle::Shaded,DisplayStyle::Transparent,DisplayStyle::Wireframe}) {
+            v.setDisplayStyle(style);v.setPickMode(Kind::Face);
+            const auto id=first(display,Kind::Face).id;check(v.select(id),"appearance selected face setup");
+            const auto owner=ViewportProbe::owner(v);const auto highlight=ViewportProbe::highlight(v);
+            const auto camera=v.camera();int notifications=0;v.selectionChanged=[&](const auto&) {++notifications;};
+            for(const auto& appearance:{changed,original}) {
+                v.setAppearance(appearance);
+                check(v.selectedId()==id && ViewportProbe::owner(v)==owner && ViewportProbe::highlight(v)==highlight && notifications==0,
+                      "appearance preview/rollback retains owner and face highlight without selection callbacks");
+                check(sameCamera(camera,v.camera()),"appearance preserves camera and clipping");
+                for(const auto& object:ViewportProbe::objects(v)) {
+                    Quantity_Color surface;object.ais->Color(surface);
+                    check(surface.IsEqual(appearance.palette.surface(representation)),"preview updates actual surface colour");
+                    check(object.ais->Attributes()->FaceBoundaryAspect()->Aspect()->Color().IsEqual(Quantity_Color(Quantity_NOC_BLACK)),
+                          "appearance retains black filled-face boundaries");
+                    const auto wire=appearance.palette.wire(representation);
+                    check(object.ais->Attributes()->WireAspect()->Aspect()->Color().IsEqual(wire) &&
+                          object.ais->Attributes()->FreeBoundaryAspect()->Aspect()->Color().IsEqual(wire) &&
+                          object.ais->Attributes()->UnFreeBoundaryAspect()->Aspect()->Color().IsEqual(wire),"preview retains surface/wire accent relationship");
+                    check(object.ais->DisplayMode()==(style==DisplayStyle::Wireframe?AIS_WireFrame:AIS_Shaded),"preview does not change actual display style");
+                    check(std::abs(object.ais->Transparency()-(style==DisplayStyle::Transparent?appearance.transparency:0))<1e-6,
+                          "custom transparency affects Transparent only");
+                }
+                passive(v);
+            }
+            v.selectionChanged={};
+        }
+        v.select("");v.setDisplayStyle(DisplayStyle::Shaded);
+        const auto factory=capture(v,"appearance-factory-"+std::to_string(int(representation)));
+        check(difference(opening,factory,QRect()).isEmpty(),"preview round trip matches appearance before the first edit");
+        v.setAppearance(changed);
+        const auto preview=capture(v,"appearance-preview-"+std::to_string(int(representation)));
+        check(!difference(factory,preview,QRect()).isEmpty(),"custom palette visibly changes framebuffer");
+        v.setAppearance(original);
+        const auto restored=capture(v,"appearance-restored-"+std::to_string(int(representation)));
+        check(difference(factory,restored,QRect()).isEmpty(),"rollback restores exact framebuffer");
+        v.showDisplay(nullptr);
+    }
+    v.setDisplayStyle(DisplayStyle::Shaded);
+    std::cout<<"PASS — appearance updates actual AIS colours/transparency, preserves owner/highlight/camera and restores framebuffer\n";
+}
 void representationClearanceChecks(Viewport& v,const Document& document) {
     v.setDisplayStyle(DisplayStyle::Shaded);
     auto b=prepareDisplay(document,Representation::Candidate);
@@ -556,6 +610,7 @@ void displayRenderChecks(inspector::Viewport& v,const inspector::Document& docum
     boundedHighlightChecks(v);
     hiddenFaceHighlightChecks(v);
     representationClearanceChecks(v,document);
+    appearanceRenderChecks(v,document);
     v.setShowContext(true);v.setDisplayStyle(DisplayStyle::Shaded);v.showDisplay(nullptr);
     check(v.error().empty(),v.error());
     std::cout<<"PASS — styles/owners, context picking/bounds, wireframe and world-origin framebuffer regressions\n";

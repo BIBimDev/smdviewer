@@ -1,7 +1,10 @@
 #include "model.hpp"
 #include "camera_tests.hpp"
 #include "display_tests.hpp"
+#include "refine_tests.hpp"
+#include <QSettings>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include "viewport.hpp"
 #include "window.hpp"
 #include "smd/json.hpp"
@@ -297,12 +300,11 @@ void uiChecks(const std::filesystem::path& samples) {
     auto* reps=window.findChild<QComboBox*>("representation");
     auto* component=window.findChild<QComboBox*>("component");
     auto* tree=window.findChild<QTreeWidget*>("entities");
-    auto* tags=window.findChild<QLineEdit*>("tag");
+    const auto tagText=[&] { return tree->currentItem()?tree->currentItem()->text(1):QString{}; };
+    const auto setTag=[&](const QString& value) { editSessionTag(tree,tree->currentItem(),value); };
     auto* details=window.findChild<QPlainTextEdit*>("details");
     auto* status=window.findChild<QLabel*>("status");
     auto* projection=window.findChild<QLabel*>("projection");
-    auto* save=window.findChild<QPushButton*>("saveTag");
-    auto* remove=window.findChild<QPushButton*>("removeTag");
     auto* pickMode=window.findChild<QComboBox*>("pick");
     Viewport* viewport=nullptr;
     for(auto* child:window.findChildren<QWidget*>()) if(auto* candidate=dynamic_cast<Viewport*>(child)) viewport=candidate;
@@ -379,7 +381,7 @@ void uiChecks(const std::filesystem::path& samples) {
             QString result=QString::number(reps->currentIndex())+"|"+QString::number(component->currentIndex())+"|"+
                 QString::number(component->count())+"|"+QString::number(component->isEnabled())+"|"+
                 QString::number(pickMode->currentIndex())+"|"+QString::fromStdString(viewport->selectedId())+"|"+
-                tags->text()+"|"+QString::number(tags->isEnabled())+"|"+details->toPlainText()+"|"+status->text();
+                tagText()+"|"+details->toPlainText()+"|"+status->text();
             for(QTreeWidgetItemIterator it(tree);*it;++it)
                 result+="|"+(*it)->text(0)+"|"+(*it)->text(1)+"|"+(*it)->data(0,Qt::UserRole).toString();
             return result;
@@ -413,13 +415,14 @@ void uiChecks(const std::filesystem::path& samples) {
         for(const auto p:{gp_Pnt(-375,-325,-1000),gp_Pnt(375,325,5000),gp_Pnt(0,0,0)}) result.push_back(viewport->project(p));
         return result;
     };
+    refineUiChecks(window,*viewport);
     const auto initialCamera=camera();
     shortcutParity();
     const auto reset=[&] {
         require(reps->currentIndex()==1 && component->currentIndex()==0 && pickMode->currentIndex()==2,"successful open resets S/All/Face");
         require(!viewport->perspective() && projection->text()=="O · Orthographic","successful open resets actual Orthographic and indicator");
         require(!tree->currentItem() && tree->selectedItems().empty() && viewport->selectedId().empty(),"successful open clears tree and viewport owner");
-        require(tags->text().isEmpty() && !tags->isEnabled() && !details->toPlainText().contains("Viewer ID"),"successful open clears details and active tag editor");
+        require(tagText().isEmpty() && !details->toPlainText().contains("Viewer ID"),"successful open clears details and active entity");
         require(viewport->error().empty(),viewport->error());
     };
     // Check the actual Window callbacks in both directions for every mode.
@@ -442,7 +445,7 @@ void uiChecks(const std::filesystem::path& samples) {
         }
         require(picked,"UI pick detected for each mode");
     }
-    selectFace();tags->setText("restart probe");save->click();
+    selectFace();setTag("restart probe");
     QProcess restarted;
     restarted.start(QCoreApplication::applicationFilePath(),{QString::fromStdU16String(samples.u16string()),"--fresh-window"});
     const bool restartedFinished=restarted.waitForFinished(15000);
@@ -450,7 +453,7 @@ void uiChecks(const std::filesystem::path& samples) {
             "new process starts without saved tags: "+restarted.readAllStandardError().toStdString());
     require(openFile(samples/fixtures[1]).isEmpty(),"open combined");reset();
     shortcutParity();
-    selectFace();tags->setText("camera tag");save->click();
+    selectFace();setTag("camera tag");
     auto* style=window.findChild<QComboBox*>("displayStyle");
     auto* context=window.findChild<QCheckBox*>("showContext");
     require(style && context && style->currentIndex()==0 && context->isChecked(),"Shaded and context are defaults");
@@ -461,24 +464,24 @@ void uiChecks(const std::filesystem::path& samples) {
     for(int i:{1,2,0}) {
         style->setCurrentIndex(i);
         require(viewport->selectedId()==retainedId && tree->currentItem()==retainedRow &&
-                tree->currentItem()->text(1)=="camera tag" && tags->text()=="camera tag" &&
+                tree->currentItem()->text(1)=="camera tag" && tagText()=="camera tag" &&
                 details->toPlainText()==retainedDetails && pickMode->currentIndex()==2 &&
                 sameCamera(retainedCamera,viewport->camera()),"style control preserves face/tree/tag/details/camera/pick mode");
     }
     for(int i:{2,3,4}) {
         const auto before=viewport->camera();reps->setCurrentIndex(i);
         require(sameCamera(before,viewport->camera()),"B to A to R controls preserve camera/projection");
-        selectFace();tags->setText("context tag");save->click();
+        selectFace();setTag("context tag");
         const auto id=viewport->selectedId();auto* row=tree->currentItem();
         const auto beforeToggle=viewport->camera();const int roots=tree->topLevelItemCount();
         for(bool show:{false,true}) {
             context->setChecked(show);
             require(viewport->selectedId()==id && tree->currentItem()==row && row->text(1)=="context tag" &&
-                    tags->text()=="context tag" && tree->topLevelItemCount()==roots &&
+                    tagText()=="context tag" && tree->topLevelItemCount()==roots &&
                     sameCamera(beforeToggle,viewport->camera()),"context control preserves owner/tree/tag/framing");
         }
     }
-    reps->setCurrentIndex(1);selectFace();tags->setText("camera tag");save->click();
+    reps->setCurrentIndex(1);selectFace();setTag("camera tag");
     const auto cameraSelection=viewport->selectedId();
     auto* cameraRow=tree->currentItem();
     const auto cameraDetails=details->toPlainText();
@@ -498,12 +501,11 @@ void uiChecks(const std::filesystem::path& samples) {
     keyP(viewport);
     require(!viewport->perspective() && projection->text()=="O · Orthographic","second P returns Orthographic indicator");
     require(viewport->selectedId()==cameraSelection && tree->currentItem()==cameraRow && tree->currentItem()->text(1)=="camera tag" &&
-            tags->text()=="camera tag" && details->toPlainText()==cameraDetails,"P twice preserves owner/tree/highlight/tag/details");
-    tags->setFocus();tags->clear();
-    require(QApplication::focusWidget()==tags,"tag typing test has actual Qt editor focus");
-    for(int code:{Qt::Key_S,Qt::Key_B,Qt::Key_A,Qt::Key_R,Qt::Key_P}) key(tags,code);
-    require(tags->text()=="sbarp" && !viewport->perspective() && reps->currentIndex()==1 && viewport->selectedId()==cameraSelection,
-            "typing s/b/a/r/p edits tag text without navigation: text="+tags->text().toStdString()+", rep="+std::to_string(reps->currentIndex())+", perspective="+std::to_string(viewport->perspective()));
+            tagText()=="camera tag" && details->toPlainText()==cameraDetails,"P twice preserves owner/tree/highlight/tag/details");
+    editSessionTag(tree,tree->currentItem(),"",true,false,true);
+    require(tagText()=="camera tag" && !viewport->perspective() && reps->currentIndex()==1 && viewport->selectedId()==cameraSelection,
+            "typing s/b/a/r/p in cancelled tag dialog preserves navigation and tag");
+    window.activateWindow();window.raise();QApplication::processEvents();
     details->setFocus();
     require(QApplication::focusWidget()==details,"details typing test has actual Qt editor focus");
     for(int code:{Qt::Key_S,Qt::Key_B,Qt::Key_A,Qt::Key_R,Qt::Key_P}) key(details,code);
@@ -513,7 +515,7 @@ void uiChecks(const std::filesystem::path& samples) {
     keyP(viewport);viewport->orient(V3d_XposYnegZpos);
     require(projection->text()=="P · Perspective","Perspective cube corner remains P");
     reps->setCurrentIndex(4);component->setCurrentIndex(1);selectFace();
-    tags->setText("saved R tag");save->click();tags->setText("unsaved editor text");
+    setTag("saved R tag");editSessionTag(tree,tree->currentItem(),"unsaved editor text",true);
     auto reduction=prepareDisplay(*loadDocument(samples/fixtures[1]),Representation::Reductions);
     navigation(*viewport,reduction);
     const auto previousCamera=camera();
@@ -524,7 +526,7 @@ void uiChecks(const std::filesystem::path& samples) {
     const auto retained=[&] {
         require(reps->currentIndex()==4 && component->currentIndex()==1 && pickMode->currentIndex()==2,"failed/cancelled open retains controls");
         require(viewport->selectedId()==selected && tree->currentItem() && tree->currentItem()->text(1)=="saved R tag","failed/cancelled open retains selected owner and saved tag");
-        require(tags->text()=="unsaved editor text" && details->toPlainText()==previousDetails && status->text()==previousStatus && camera()==previousCamera,"failed/cancelled open retains editor, details, status and camera");
+        require(tagText()=="saved R tag" && details->toPlainText()==previousDetails && status->text()==previousStatus && camera()==previousCamera,"failed/cancelled open retains tag, details, status and camera");
         require(sameCamera(previousCameraState,viewport->camera()) && projection->text()=="P · Perspective","cancel/failure preserves complete camera and projection indicator");
         require(filename->text()==fixtures[1],"failed/cancelled open retains active filename");
     };
@@ -544,22 +546,22 @@ void uiChecks(const std::filesystem::path& samples) {
     }
     require(openFile(copies.first).isEmpty(),"outside copy with spaces/non-ASCII path");reset();
     require(filename->text()==QString::fromStdU16String(copies.first.filename().u16string()),"active Unicode filename label");
-    selectFace();tags->setText("source-face-tag");save->click();
-    reps->setCurrentIndex(2);selectFace();require(tags->text().isEmpty(),"S tag cannot leak onto coincident B face");
+    selectFace();setTag("source-face-tag");
+    reps->setCurrentIndex(2);selectFace();require(tagText().isEmpty(),"S tag cannot leak onto coincident B face");
     navigation(*viewport,display);
     pickMode->setCurrentIndex(1);
     require(openFile(copies.first).isEmpty(),"same-file reopen");reset();
     require(camera()==initialCamera,"same-file reopen resets camera");
-    selectFace();require(tags->text()=="source-face-tag","same unchanged file retains saved tag");
-    tags->setText("renamed");save->click();require(tree->currentItem()->text(1)=="renamed","tag rename");
-    remove->click();require(tags->text().isEmpty() && tree->currentItem()->text(1).isEmpty(),"tag removal");
-    tags->setText("expires");save->click();
+    selectFace();require(tagText()=="source-face-tag","same unchanged file retains saved tag");
+    setTag("renamed");require(tree->currentItem()->text(1)=="renamed","tag rename");
+    editSessionTag(tree,tree->currentItem(),"",false,true);require(tagText().isEmpty() && tree->currentItem()->text(1).isEmpty(),"tag removal");
+    setTag("expires");
     require(openFile(copies.second).isEmpty(),"same basename other directory");reset();
-    selectFace();require(tags->text().isEmpty(),"same basename tags isolated in UI");
-    require(openFile(copies.first).isEmpty(),"reopen first copy");selectFace();require(tags->text()=="expires","first file tags retained");
+    selectFace();require(tagText().isEmpty(),"same basename tags isolated in UI");
+    require(openFile(copies.first).isEmpty(),"reopen first copy");selectFace();require(tagText()=="expires","first file tags retained");
     copies.change();
     require(openFile(copies.first).isEmpty(),"changed content same path");reset();
-    selectFace();require(tags->text().isEmpty(),"changed file tags isolated in UI");
+    selectFace();require(tagText().isEmpty(),"changed file tags isolated in UI");
     Window fresh(samples);fresh.show();QApplication::processEvents();
     auto* freshTree=fresh.findChild<QTreeWidget*>("entities");
     for(QTreeWidgetItemIterator it(freshTree);*it;++it) require((*it)->text(1).isEmpty(),"fresh window has no persisted tags");
@@ -573,6 +575,10 @@ void uiChecks(const std::filesystem::path& samples) {
 int main(int argc,char** argv) {
     try {
         std::cout<<std::unitbuf;
+        QTemporaryDir preferences;
+        require(preferences.isValid(),"isolated preferences directory");
+        QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,preferences.path());
+        QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,preferences.path());
         require(argc==2 || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--fresh-window" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera" || std::string(argv[2])=="--display")),
                 "usage: smd-inspector-tests <samples> [--render|--open|--camera|--display|--fresh-window]");
         const std::filesystem::path samples=argv[1];
