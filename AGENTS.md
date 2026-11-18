@@ -2,9 +2,9 @@
 
 ## Purpose and scope
 
-This repository contains an experimental STRAKON/DICAD `.smd` reader and browser-based geometry inspector. The longer-term goal is an independent system for geometric data extraction, parametric interpretation, reinforcement, design, and workshop-drawing generation for precast concrete elements.
+This repository contains an experimental STRAKON/DICAD `.smd` reader, a browser-based geometry inspector and the opt-in native GEO-Visualiser. The longer-term goal is an independent system for geometric data extraction, parametric interpretation, reinforcement, design, and workshop-drawing generation for precast concrete elements.
 
-**The viewer is a research and diagnostic tool, not the future engineering system of record.** These instructions govern the repository root and its subdirectories unless a more specific `AGENTS.md` is introduced deliberately.
+**The viewers are research and diagnostic tools, not the future engineering system of record.** These instructions govern the repository root and its subdirectories unless a more specific `AGENTS.md` is introduced deliberately.
 
 ## Non-negotiable working principles
 
@@ -93,9 +93,40 @@ The accepted staged workflow is **source B-rep → OCCT faces → valid OCCT sol
 
 The three GEO stages are roadmap boundaries, not a single omnibus implementation authorization. Discuss focused milestones, acceptance criteria, testing, and code review before each coding assignment; use a task branch and PR. No roadmap item above authorizes modifications by itself.
 
+## Native GEO-Visualiser — development phase closed 20261118
+
+The current GEO-Visualiser is accepted as fit for its inspection purpose.
+This development phase is complete. No further feature development is planned
+for now. This does not replace the browser viewer or authorize changes to the
+parser, the geometry pipeline or source evidence.
+
+- **Accepted scope:** the opt-in Qt/OCCT 8.0.1 desktop inspector in
+  `geo-visualiser/` opens supported SMD files and inspects source entities,
+  their properties and provenance, and the validated solid `S` alongside the
+  derived principal-extrusion candidate `B`, extensions `A` and reductions
+  `R`. Geometry is read-only. Coordinates are raw source-local millimetres.
+  Session tags are transient viewer annotations, not SMD metadata.
+- **Tested source revision:**
+  `3ca99232061f96ba910732015b8765bc8a8cbcc9` on
+  `feat/geo-vis-refine-04`. This is the accepted development tip before
+  integration, not a statement of the current `main` HEAD.
+- **Kubuntu:** Release build, 9/9 CTests, `--open` and a fresh `--render`
+  under xcb passed for the final fix. The operator accepted the viewer and
+  the final stale-tag fix after manual review.
+- **Windows 11 x64, active RDP session:** MSVC Release build, 9/9 CTests,
+  `--open` and two fresh `--render` runs passed. Manual RDP acceptance
+  was not recorded. Do not infer it from the automated result.
+- **Known and deferred:** the appearance dialog can report a failed save
+  even if preferences were written when Qt retains an earlier settings
+  error. Cancel restores the live preview but may not undo such a write.
+  Do not treat this failure path as fixed or covered by normal-save tests.
+
+For native build, launch and verification commands, see
+[docs/GEO-VISUALISER.md](docs/GEO-VISUALISER.md).
+
 ## Build and repository hygiene
 
-For viewer changes, the baseline checks are:
+For browser viewer changes, the baseline checks are:
 
 ```sh
 npm ci
