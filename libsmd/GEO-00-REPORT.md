@@ -47,8 +47,8 @@ npm run build
 node libsmd/tests/export_reference.mjs --write
 node libsmd/tests/export_reference.mjs
 python3 libsmd/tests/compare.py --extract /tmp/smd-geo00-build/smd-extract --tokens /tmp/smd-geo00-build/smd-token-probe
-/tmp/smd-geo00-build/smd-extract public/samples/plain_column.smd
-/tmp/smd-geo00-build/smd-extract public/samples/pocket_column.smd
+/tmp/smd-geo00-build/smd-extract public/samples/Columns/COL_PLAIN.smd
+/tmp/smd-geo00-build/smd-extract public/samples/Columns/COL_SINGLE-POCKET.smd
 ```
 
 Release configure/build and both CTest tests pass. The oracle verifies both full

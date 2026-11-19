@@ -21,8 +21,8 @@ or CLI runtime dependency.
 cmake -S libsmd -B /tmp/smd-geo00-build -DCMAKE_BUILD_TYPE=Release
 cmake --build /tmp/smd-geo00-build
 ctest --test-dir /tmp/smd-geo00-build --output-on-failure
-/tmp/smd-geo00-build/smd-extract public/samples/plain_column.smd
-/tmp/smd-geo00-build/smd-extract public/samples/pocket_column.smd
+/tmp/smd-geo00-build/smd-extract public/samples/Columns/COL_PLAIN.smd
+/tmp/smd-geo00-build/smd-extract public/samples/Columns/COL_SINGLE-POCKET.smd
 ```
 
 For an MSVC developer terminal, the corresponding commands are:
@@ -31,7 +31,7 @@ For an MSVC developer terminal, the corresponding commands are:
 cmake -S libsmd -B "$env:TEMP/smd-geo00-build"
 cmake --build "$env:TEMP/smd-geo00-build" --config Release
 ctest --test-dir "$env:TEMP/smd-geo00-build" -C Release --output-on-failure
-& "$env:TEMP/smd-geo00-build/Release/smd-extract.exe" public/samples/plain_column.smd
+& "$env:TEMP/smd-geo00-build/Release/smd-extract.exe" public/samples/Columns/COL_PLAIN.smd
 ```
 
 Oracle provenance checks require exact committed source/fixture bytes. Use an LF

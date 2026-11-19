@@ -20,8 +20,12 @@ BASE = args.driver + ('/session/' + args.session if args.session else '')
 ROOT = Path(__file__).resolve().parent.parent
 SHARED = Path(tempfile.mkdtemp(prefix='.geo00-int02-browser-', dir=ROOT))
 atexit.register(shutil.rmtree, SHARED)
-for name in ['plain_column', 'pocket_column']:
-    (SHARED / (name + '.native.json')).write_bytes(subprocess.check_output([args.extract, str(ROOT / 'public/samples' / (name + '.smd'))]))
+SMD_PATHS = {
+    'plain_column': ROOT / 'public/samples/Columns/COL_PLAIN.smd',
+    'pocket_column': ROOT / 'public/samples/Columns/COL_SINGLE-POCKET.smd',
+}
+for name, path in SMD_PATHS.items():
+    (SHARED / (name + '.native.json')).write_bytes(subprocess.check_output([args.extract, str(path)]))
 ELEMENT = 'element-6066-11e4-a52e-4f735466cecf'
 
 def call(path, data=None, method=None):
@@ -116,21 +120,21 @@ time.sleep(.5)
 observe_errors()
 
 for name, vertices, faces in [('plain_column', '8', '6'), ('pocket_column', '16', '10')]:
-    smd = load(ROOT / 'public/samples' / (name + '.smd'), False)
+    smd = load(SMD_PATHS[name], False)
     assert (smd['vertices'], smd['faces']) == (vertices, faces)
     native = load(str(SHARED / (name + '.native.json')))
     for key in ['vertices', 'faces', 'vertexRows', 'faceRows', 'geometry', 'object']:
         assert native[key] == smd[key], (name, key)
     assert native['canvases'] == 2
     for _ in range(2):
-        load(ROOT / 'public/samples' / (name + '.smd'), False)
+        load(SMD_PATHS[name], False)
         repeated = load(str(SHARED / (name + '.native.json')))
         assert repeated['vertexRows'] == native['vertexRows']
         assert repeated['faceRows'] == native['faceRows']
     print('PASS both input paths and repeated switching:', name, flush=True)
 
     for native_input in [False, True]:
-        load(str(SHARED / (name + '.native.json')) if native_input else ROOT / 'public/samples' / (name + '.smd'), native_input)
+        load(str(SHARED / (name + '.native.json')) if native_input else SMD_PATHS[name], native_input)
         click('#fitButton')
         click('#verticesButton')
         assert js('return document.querySelector("#verticesButton").getAttribute("aria-pressed")') == 'true'
@@ -211,7 +215,7 @@ assert js('return window.__smokeErrors') == []
 print('PASS no window errors or unhandled promise rejections', flush=True)
 
 # File/drop input, actual high-bit browser decoding, SMD rejection and recovery.
-plain_bytes = (ROOT / 'public/samples/plain_column.smd').read_bytes()
+plain_bytes = SMD_PATHS['plain_column'].read_bytes()
 raw_name = plain['parsed']['geometryBlockLines'][3].encode('ascii')
 high_bytes = plain_bytes.replace(raw_name, b'"St\xfctze \x80 \x93\xe9\x94"', 1)
 assert 'Native C++ (WASM)' in file_event(high_bytes)['status']
@@ -223,18 +227,18 @@ for data in [b'', b'"OTHER"\n#10125\n', b'"DICAD ASC"\n#10071\n', b'"DICAD ASC"\
     assert rejected['vertices'] == rejected['faces'] == '0'
     assert rejected['geometry'] == '' and rejected['details'] == ''
     assert js('return document.querySelectorAll("#objectInfo bad, #statusText bad").length') == 0
-    assert load(ROOT / 'public/samples/plain_column.smd', False)['vertices'] == '8'
+    assert load(SMD_PATHS['plain_column'], False)['vertices'] == '8'
 print('PASS SMD drop, high-bit Windows-1252 decoding, malformed/unsupported input and recovery', flush=True)
 
 # The same initialized module parses subsequent local files without HTTP requests.
 js('performance.clearResourceTimings()')
-load(ROOT / 'public/samples/pocket_column.smd', False)
-load(ROOT / 'public/samples/plain_column.smd', False)
+load(SMD_PATHS['pocket_column'], False)
+load(SMD_PATHS['plain_column'], False)
 assert js('return performance.getEntriesByType("resource").filter(e=>e.initiatorType !== "other").map(e=>e.name)') == []
 print('PASS local SMD parsing causes no network requests after static WASM retrieval', flush=True)
 
 for name, count in [('plain_column', 8), ('pocket_column', 16)]:
-    load(ROOT / 'public/samples' / (name + '.smd'), False)
+    load(SMD_PATHS[name], False)
     click('#verticesButton')
     time.sleep(.15)
     visible = 'return [...document.querySelectorAll(".vertex-label")].filter(e=>getComputedStyle(e).display !== "none").length'
@@ -287,14 +291,14 @@ for reject in [False, True]:
         return original.apply(window,args);
       };
     '''.replace('if (arguments[0])', 'if (' + json.dumps(reject) + ')'))
-    call('/element/' + element('#fileInput') + '/value', {'text': str(ROOT / 'public/samples/plain_column.smd')})
+    call('/element/' + element('#fileInput') + '/value', {'text': str(SMD_PATHS['plain_column'])})
     wait_for(lambda: js('return window.__wasmWaiting'))
     load(SHARED / 'pocket_column.native.json')
     js('window.__releaseWasm()')
     time.sleep(.7)
     assert state()['vertices'] == '16' and 'Native C++ (JSON v1)' in state()['status'], state()
     js('window.__restoreFetch()')
-    assert load(ROOT / 'public/samples/plain_column.smd', False)['vertices'] == '8'
+    assert load(SMD_PATHS['plain_column'], False)['vertices'] == '8'
     assert js('return window.__smokeErrors') == []
 print('PASS pending WASM initialization success/failure cannot overwrite newer JSON; retry succeeds', flush=True)
 
@@ -307,12 +311,12 @@ js('''const original=window.fetch;window.__restoreFetch=()=>{window.fetch=origin
     return Promise.reject(Error('<synthetic WASM unavailable>'));
   }return original.apply(window,args);
 };''')
-failed = load(ROOT / 'public/samples/plain_column.smd', False, False)
+failed = load(SMD_PATHS['plain_column'], False, False)
 assert 'WASM initialization failed:' in failed['status'], failed
 assert failed['vertices'] == failed['faces'] == '0' and failed['geometry'] == ''
 assert js('return document.querySelectorAll("#objectInfo synthetic").length') == 0
 js('window.__restoreFetch()')
-assert load(ROOT / 'public/samples/plain_column.smd', False)['vertices'] == '8'
+assert load(SMD_PATHS['plain_column'], False)['vertices'] == '8'
 assert js('return window.__smokeErrors') == []
 print('PASS initialization failure is visible, clears stale model, has no TS fallback, and retries', flush=True)
 print('Firefox WASM acceptance automation passed:', args.url, flush=True)

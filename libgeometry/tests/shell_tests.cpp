@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
         std::cout << "ok " << ++checks << " - " << name << '\n';
     };
     try {
-        require(argc == 2, "Usage: smd-shell-tests plain_column.smd");
+        require(argc == 2, "Usage: smd-shell-tests COL_PLAIN.smd");
         test("plain column: 8 vertices, 12 shared edges, 6 faces; unchanged source and GEO-01 input", [&] {
             std::ifstream file(argv[1], std::ios::binary); require(file.good(),"fixture readable");
             const std::string text{std::istreambuf_iterator<char>(file),{}};

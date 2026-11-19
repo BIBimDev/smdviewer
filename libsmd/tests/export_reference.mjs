@@ -13,13 +13,30 @@ const root = resolve(here, '../..');
 const writing = process.argv.length === 3 && process.argv[2] === '--write';
 if (process.argv.length > 2 && !writing) throw new Error('Usage: node libsmd/tests/export_reference.mjs [--write]');
 const sources = ['tokenizer.ts', 'parser10125.ts', 'brepDetector.ts', 'transform.ts', 'types.ts'];
-const samples = ['plain_column', 'pocket_column'];
+const samples = {
+  plain_column: {
+    referencePath: 'public/samples/plain_column.smd',
+    checkoutPath: 'public/samples/Columns/COL_PLAIN.smd',
+  },
+  pocket_column: {
+    referencePath: 'public/samples/pocket_column.smd',
+    checkoutPath: 'public/samples/Columns/COL_SINGLE-POCKET.smd',
+  },
+};
 const hashes = {};
 const referenceCommit = '88d996f9056edf6d8b48a40263a7891d33a1ac68';
-for (const file of [...sources.map(f => `src/smd/${f}`), ...samples.map(f => `public/samples/${f}.smd`)]) {
-  hashes[file] = createHash('sha256').update(readFileSync(join(root,file))).digest('hex');
-  const baselineHash = createHash('sha256').update(execFileSync('git', ['show',`${referenceCommit}:${file}`], { cwd: root })).digest('hex');
-  if (hashes[file] !== baselineHash) throw new Error(`Reference differs from approved baseline: ${file}`);
+const referenceFiles = [
+  ...sources.map(name => {
+    const path = `src/smd/${name}`;
+    return { referencePath: path, checkoutPath: path };
+  }),
+  ...Object.values(samples),
+];
+for (const { referencePath, checkoutPath } of referenceFiles) {
+  hashes[referencePath] = createHash('sha256').update(readFileSync(join(root, checkoutPath))).digest('hex');
+  const baselineHash = createHash('sha256').update(execFileSync('git',
+    ['show', `${referenceCommit}:${referencePath}`], { cwd: root })).digest('hex');
+  if (hashes[referencePath] !== baselineHash) throw new Error(`Reference differs from approved baseline: ${checkoutPath}`);
 }
 const temp = mkdtempSync(join(tmpdir(), 'smd-ts-reference-'));
 function record(name, value) {
@@ -45,10 +62,10 @@ try {
     task: 'GEO-00', referenceCommit,
     generator: 'libsmd/tests/export_reference.mjs', sha256: hashes,
   });
-  for (const name of samples)
-    record(`${name}.json`,envelope(readFileSync(join(root,`public/samples/${name}.smd`),'utf8')));
+  for (const [name, { checkoutPath }] of Object.entries(samples))
+    record(`${name}.json`, envelope(readFileSync(join(root, checkoutPath), 'utf8')));
 
-  const plain = readFileSync(join(root,'public/samples/plain_column.smd'),'utf8');
+  const plain = readFileSync(join(root, samples.plain_column.checkoutPath), 'utf8');
   const parsed = parseSmd10125(plain);
   const tokens = tokenizeSmd(parsed.geometryBlockLines.join('\n'));
   const start = parsed.geometry.brep.vertexCountTokenIndex;

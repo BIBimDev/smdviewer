@@ -140,8 +140,8 @@ cmake -S libsmd -B /tmp/smd-int02-native -DCMAKE_BUILD_TYPE=Release
 cmake --build /tmp/smd-int02-native -j 2
 ctest --test-dir /tmp/smd-int02-native --output-on-failure
 node libsmd/tests/export_reference.mjs
-/tmp/smd-int02-native/smd-extract public/samples/plain_column.smd > /tmp/smd-int02-plain.native.json
-/tmp/smd-int02-native/smd-extract public/samples/pocket_column.smd > /tmp/smd-int02-pocket.native.json
+/tmp/smd-int02-native/smd-extract public/samples/Columns/COL_PLAIN.smd > /tmp/smd-int02-plain.native.json
+/tmp/smd-int02-native/smd-extract public/samples/Columns/COL_SINGLE-POCKET.smd > /tmp/smd-int02-pocket.native.json
 npm run test:native-json -- /tmp/smd-int02-plain.native.json /tmp/smd-int02-pocket.native.json
 npm run test:wasm -- /tmp/smd-int02-native/smd-extract
 npm run test:wasm-build

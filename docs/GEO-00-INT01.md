@@ -48,8 +48,8 @@ Run from the repository root, with Node 22+, CMake, C++20 and Python 3:
 npm ci
 cmake -S libsmd -B /tmp/smd-geo00-int01-build -DCMAKE_BUILD_TYPE=Release
 cmake --build /tmp/smd-geo00-int01-build
-/tmp/smd-geo00-int01-build/smd-extract public/samples/plain_column.smd > /tmp/plain_column.native.json
-/tmp/smd-geo00-int01-build/smd-extract public/samples/pocket_column.smd > /tmp/pocket_column.native.json
+/tmp/smd-geo00-int01-build/smd-extract public/samples/Columns/COL_PLAIN.smd > /tmp/plain_column.native.json
+/tmp/smd-geo00-int01-build/smd-extract public/samples/Columns/COL_SINGLE-POCKET.smd > /tmp/pocket_column.native.json
 npm run test:native-json -- /tmp/plain_column.native.json /tmp/pocket_column.native.json
 ctest --test-dir /tmp/smd-geo00-int01-build --output-on-failure
 node libsmd/tests/export_reference.mjs
