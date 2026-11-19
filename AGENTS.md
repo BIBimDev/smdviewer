@@ -116,6 +116,14 @@ parser, the geometry pipeline or source evidence.
 - **Windows 11 x64, active RDP session:** MSVC Release build, 9/9 CTests,
   `--open` and two fresh `--render` runs passed. Manual RDP acceptance
   was not recorded. Do not infer it from the automated result.
+- **Windows on ARM64 (Surface), verified 20261118:** MSVC Release `x64`
+  build passed and the operator confirmed that the GEO-Visualiser ran
+  under x64 emulation at `88c59c5f2227eabce7ae297d88e67f30461d6ec8`.
+  The parser-only CTests passed 2/2 after restoring the exact LF bytes of
+  seven reference files converted to CRLF at checkout. OCCT reported the
+  Microsoft GDI Generic OpenGL 1.1 fallback during launch. A native ARM64
+  viewer build, hardware-accelerated rendering, and the full viewer test
+  suite were not verified on the Surface.
 - **Known and deferred:** the appearance dialog can report a failed save
   even if preferences were written when Qt retains an earlier settings
   error. Cancel restores the live preview but may not undo such a write.
