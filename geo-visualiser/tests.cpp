@@ -55,7 +55,7 @@
 
 namespace {
 using namespace inspector;
-constexpr const char* fixtures[] = {"plain_column.smd", "SinglePocketingSingleCorbelColumn.smd"};
+constexpr const char* fixtures[] = {"Columns/COL_PLAIN.smd", "Columns/COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd"};
 using ShapeMap = NCollection_IndexedMap<TopoDS_Shape,TopTools_ShapeMapHasher>;
 void require(bool value, const std::string& why) { if(!value) throw std::runtime_error(why); }
 void flags(std::ostream& out, const TopoDS_Shape& s) {

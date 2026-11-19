@@ -166,8 +166,8 @@ int main(int argc, char** argv) {
         std::cout << "ok " << ++checks << " - " << name << '\n';
     };
     try {
-        require(argc == 6, "Usage: smd-geometry-tests plain_column.smd pocket_column.smd "
-                "SingleCorbelColumn.smd SingleHalfCorbelColumn.smd SinglePocketingSingleCorbelColumn.smd");
+        require(argc == 6, "Usage: smd-geometry-tests COL_PLAIN.smd COL_SINGLE-POCKET.smd "
+                "COL_PLAIN_SINGLE-CORBEL.smd COL_PLAIN_HALF-CORBEL.smd COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd");
         auto parsed = readFixture(argv[1]);
         auto& b = parsed.geometry.brep;
         test("plain column: six ordered faces, areas, planes, exact shared local vertices", [&] {

@@ -36,11 +36,11 @@ Build Tools machine); a portable installer/runtime deployment is not delivered.
 
 Choose **☰ → File → Open SMD…** or press **Ctrl+O** to open an existing `.smd`
 file. The title bar shows `GEO-Visualiser | <basename>` after a successful open,
-including the initial `plain_column.smd` load. The dialog starts in the
+including the initial `Columns/COL_PLAIN.smd` load. The dialog starts in the
 checkout's `public/samples` directory every time and allows navigation elsewhere.
 The directory is captured as an absolute source checkout path by CMake;
-reconfigure after moving the checkout. The original combined filename is
-`SinglePocketingSingleCorbelColumn.smd` (no space before `.smd`).
+reconfigure after moving the checkout. The original combined specimen is now
+`Columns/COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd`.
 
 Each open rereads the file and runs the full native pipeline. Only after the
 pipeline and initial S display data are ready does the new document replace the

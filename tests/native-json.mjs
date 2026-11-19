@@ -49,13 +49,16 @@ try {
   const require = createRequire(import.meta.url);
   const { parseNativeJson, validateNativeJson } = require(join(temp, 'nativeJson.js'));
   const { parseSmd10125 } = require(join(temp, 'parser10125.js'));
-  const specimens = ['plain_column', 'pocket_column'];
-  const envelopes = specimens.map(name => JSON.parse(readFileSync(
+  const specimens = [
+    ['plain_column', 'COL_PLAIN.smd'],
+    ['pocket_column', 'COL_SINGLE-POCKET.smd'],
+  ];
+  const envelopes = specimens.map(([name]) => JSON.parse(readFileSync(
     join(root, `libsmd/tests/golden/${name}.json`), 'utf8')));
 
-  for (const [i, name] of specimens.entries()) {
+  for (const [i, [name, filename]] of specimens.entries()) {
     test(`${name}: accepted golden shape and current browser SMD parser agree`, () => {
-      const text = new TextDecoder('windows-1252').decode(readFileSync(join(root, `public/samples/${name}.smd`)));
+      const text = new TextDecoder('windows-1252').decode(readFileSync(join(root, 'public/samples/Columns', filename)));
       compare(parseNativeJson(JSON.stringify(envelopes[i])), JSON.parse(JSON.stringify(parseSmd10125(text))));
     });
     test(`${name}: unchanged data, ordered loops, metadata and transform`, () => {

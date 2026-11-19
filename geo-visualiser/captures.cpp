@@ -21,7 +21,7 @@ int main(int argc,char** argv) {
         QApplication app(argc,argv);
         const std::filesystem::path samples=argv[1];
         const std::string prefix=argv[2];
-        const auto doc=inspector::loadDocument(samples/"pocket_column.smd");
+        const auto doc=inspector::loadDocument(samples/"Columns/COL_SINGLE-POCKET.smd");
         auto solid=inspector::prepareDisplay(*doc,inspector::Representation::Solid);
         auto reduction=inspector::prepareDisplay(*doc,inspector::Representation::Reductions);
         inspector::Viewport v;v.resize(900,800);v.show();app.processEvents();

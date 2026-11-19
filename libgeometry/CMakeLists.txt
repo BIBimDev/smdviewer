@@ -45,33 +45,33 @@ if(BUILD_TESTING)
     add_executable(smd-boolean-decomposition-tests tests/boolean_decomposition_tests.cpp)
     target_link_libraries(smd-boolean-decomposition-tests PRIVATE smd-geometry)
     add_test(NAME geometry-boolean-decomposition COMMAND smd-boolean-decomposition-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleHalfCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SinglePocketingSingleCorbelColumn.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_SINGLE-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_HALF-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd")
     add_executable(smd-principal-prism-tests tests/principal_prism_tests.cpp)
     target_link_libraries(smd-principal-prism-tests PRIVATE smd-geometry)
     add_test(NAME geometry-principal-prism COMMAND smd-principal-prism-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd")
     add_executable(smd-solid-tests tests/solid_tests.cpp)
     target_link_libraries(smd-solid-tests PRIVATE smd-geometry)
     add_test(NAME geometry-solid COMMAND smd-solid-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleHalfCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SinglePocketingSingleCorbelColumn.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_SINGLE-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_HALF-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd")
     add_executable(smd-shell-tests tests/shell_tests.cpp)
     target_link_libraries(smd-shell-tests PRIVATE smd-geometry)
     add_test(NAME geometry-shell COMMAND smd-shell-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd")
     add_executable(smd-geometry-tests tests/faces_tests.cpp)
     target_link_libraries(smd-geometry-tests PRIVATE smd-geometry)
     add_test(NAME geometry-faces COMMAND smd-geometry-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleHalfCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SinglePocketingSingleCorbelColumn.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_SINGLE-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_HALF-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd")
 endif()

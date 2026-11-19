@@ -144,7 +144,7 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     status_=new LoadStatusLabel;
     status_->setObjectName("status");
     statusBar()->addWidget(status_,1);
-    setLoadStatus("Loading plain_column.smd…");
+    setLoadStatus("Loading COL_PLAIN.smd…");
     projection_=new QLabel;
     projection_->setObjectName("projection");
     statusBar()->setSizeGripEnabled(false);
@@ -157,7 +157,7 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     viewport_->selectionChanged = [&](const std::string& id) { select(id,true); };
     // Defer clearing data until the viewport's current OCCT callback has returned.
     viewport_->failed = [&](const std::string& message) { QTimer::singleShot(0,this,[this,message] { fail(message); }); };
-    QTimer::singleShot(0,this,[this] { load(samples_ / "plain_column.smd"); });
+    QTimer::singleShot(0,this,[this] { load(samples_ / "Columns/COL_PLAIN.smd"); });
 }
 Window::~Window() {
     // Release OCCT/GL while the parent's native window is still alive and

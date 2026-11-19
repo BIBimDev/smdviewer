@@ -104,7 +104,7 @@ cmake --build /tmp/smd-geo02a-build --parallel 6
 LD_LIBRARY_PATH=/tmp/smd-occt-8.0.1/lib \
   ctest --test-dir /tmp/smd-geo02a-build --output-on-failure
 LD_LIBRARY_PATH=/tmp/smd-occt-8.0.1/lib \
-  /tmp/smd-geo02a-build/libgeometry/smd-shell-tests public/samples/plain_column.smd
+  /tmp/smd-geo02a-build/libgeometry/smd-shell-tests public/samples/Columns/COL_PLAIN.smd
 
 env -u CMAKE_PREFIX_PATH -u OpenCASCADE_DIR -u CMAKE_TOOLCHAIN_FILE \
   cmake -S . -B /tmp/smd-geo02a-no-occt -DCMAKE_BUILD_TYPE=Release
