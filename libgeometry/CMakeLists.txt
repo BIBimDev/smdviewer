@@ -1,7 +1,23 @@
-find_package(OpenCASCADE 8.0.1 EXACT CONFIG QUIET)
+set(smd_occt_components FoundationClasses ModelingData ModelingAlgorithms)
+if(SMD_BUILD_GEO_VISUALISER)
+    list(APPEND smd_occt_components Visualization)
+endif()
+find_package(OpenCASCADE 8.0.1 EXACT CONFIG QUIET COMPONENTS ${smd_occt_components})
 if(NOT OpenCASCADE_FOUND)
+    if(SMD_BUILD_GEO_VISUALISER)
+        message(FATAL_ERROR "GEO-Visualiser requires visualization-enabled OCCT 8.0.1 exactly (FoundationClasses, ModelingData, ModelingAlgorithms, Visualization). Set OpenCASCADE_DIR to that installation; the headless installation remains supported with SMD_BUILD_GEO_VISUALISER=OFF.")
+    endif()
     message(FATAL_ERROR
         "GEO-01A requires installed OCCT 8.0.1 exactly. Set OpenCASCADE_DIR to the directory containing OpenCASCADEConfig.cmake, or set CMAKE_PREFIX_PATH to its installation prefix.")
+endif()
+if(SMD_BUILD_GEO_VISUALISER)
+    # Imported package targets otherwise have directory scope. The opt-in
+    # desktop sibling uses the same kernel targets and exact version check.
+    foreach(toolkit IN LISTS OpenCASCADE_LIBRARIES)
+        if(TARGET ${toolkit})
+            set_property(TARGET ${toolkit} PROPERTY IMPORTED_GLOBAL TRUE)
+        endif()
+    endforeach()
 endif()
 if(NOT "${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}" STREQUAL "8.0.1"
    OR NOT "${OpenCASCADE_DEVELOPMENT_VERSION}" STREQUAL "")
@@ -29,33 +45,33 @@ if(BUILD_TESTING)
     add_executable(smd-boolean-decomposition-tests tests/boolean_decomposition_tests.cpp)
     target_link_libraries(smd-boolean-decomposition-tests PRIVATE smd-geometry)
     add_test(NAME geometry-boolean-decomposition COMMAND smd-boolean-decomposition-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleHalfCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SinglePocketingSingleCorbelColumn.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_SINGLE-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_HALF-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd")
     add_executable(smd-principal-prism-tests tests/principal_prism_tests.cpp)
     target_link_libraries(smd-principal-prism-tests PRIVATE smd-geometry)
     add_test(NAME geometry-principal-prism COMMAND smd-principal-prism-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd")
     add_executable(smd-solid-tests tests/solid_tests.cpp)
     target_link_libraries(smd-solid-tests PRIVATE smd-geometry)
     add_test(NAME geometry-solid COMMAND smd-solid-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleHalfCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SinglePocketingSingleCorbelColumn.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_SINGLE-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_HALF-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd")
     add_executable(smd-shell-tests tests/shell_tests.cpp)
     target_link_libraries(smd-shell-tests PRIVATE smd-geometry)
     add_test(NAME geometry-shell COMMAND smd-shell-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd")
     add_executable(smd-geometry-tests tests/faces_tests.cpp)
     target_link_libraries(smd-geometry-tests PRIVATE smd-geometry)
     add_test(NAME geometry-faces COMMAND smd-geometry-tests
-        "${PROJECT_SOURCE_DIR}/public/samples/plain_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/pocket_column.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SingleHalfCorbelColumn.smd"
-        "${PROJECT_SOURCE_DIR}/public/samples/SinglePocketingSingleCorbelColumn.smd")
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_SINGLE-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN_HALF-CORBEL.smd"
+        "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd")
 endif()

@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr const char* inspectorSampleDirectory = "@PROJECT_SOURCE_DIR@/public/samples";

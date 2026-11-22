@@ -10,6 +10,11 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 ABS_TOL, REL_TOL = 1e-9, 1e-12
+# Provenance keys refer to paths at the approved reference commit.
+CHECKOUT_PATHS = {
+    'public/samples/plain_column.smd': 'public/samples/Columns/COL_PLAIN.smd',
+    'public/samples/pocket_column.smd': 'public/samples/Columns/COL_SINGLE-POCKET.smd',
+}
 
 
 def require(condition, message):
@@ -65,12 +70,13 @@ def main():
     options = args.parse_args()
     provenance = json.loads((HERE / 'golden/provenance.json').read_text())
     for name, expected_hash in provenance['sha256'].items():
-        require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == expected_hash, f'Reference source changed: {name}')
+        require(hashlib.sha256((ROOT / CHECKOUT_PATHS.get(name, name)).read_bytes()).hexdigest() == expected_hash, f'Reference source changed: {name}')
     for name, vertex_count, face_count, transformed in [('plain_column', 8, 6, True), ('pocket_column', 16, 10, False)]:
         expected = json.loads((HERE / f'golden/{name}.json').read_text(encoding='utf-8'))
-        actual = run(options.extract, ROOT / f'public/samples/{name}.smd', expected)
-        first_output = subprocess.check_output([options.extract, str(ROOT / f'public/samples/{name}.smd')])
-        require(first_output == subprocess.check_output([options.extract, str(ROOT / f'public/samples/{name}.smd')]), 'nondeterministic JSON')
+        specimen = ROOT / CHECKOUT_PATHS[f'public/samples/{name}.smd']
+        actual = run(options.extract, specimen, expected)
+        first_output = subprocess.check_output([options.extract, str(specimen)])
+        require(first_output == subprocess.check_output([options.extract, str(specimen)]), 'nondeterministic JSON')
         brep = actual['parsed']['geometry']['brep']
         require(len(brep['verticesLocal']) == vertex_count and len(brep['faces']) == face_count, f'{name}: vertex/face count differs')
         require(('transform' in brep) == transformed, f'{name}: transform presence differs')

@@ -187,7 +187,7 @@ git ls-files --eol libgeometry libsmd public/samples src/smd
 & "$bin/cmake.exe" --build build/geo02b-windows --config Release --parallel 6
 $env:PATH = "$root/occt-install/win64/vc14/bin;$env:PATH"
 & "$bin/ctest.exe" --test-dir build/geo02b-windows -C Release --output-on-failure
-& build/geo02b-windows/libgeometry/Release/smd-solid-tests.exe public/samples/plain_column.smd
+& build/geo02b-windows/libgeometry/Release/smd-solid-tests.exe public/samples/Columns/COL_PLAIN.smd
 
 Remove-Item Env:CMAKE_PREFIX_PATH,Env:OpenCASCADE_DIR,Env:CMAKE_TOOLCHAIN_FILE -ErrorAction SilentlyContinue
 & "$bin/cmake.exe" -S . -B build/geo02b-windows-default -G 'Visual Studio 17 2022' -A x64
@@ -233,7 +233,7 @@ cmake --build /tmp/smd-geo02b-linux --parallel 6
 LD_LIBRARY_PATH=/tmp/smd-geo02b-occt-install/lib \
   ctest --test-dir /tmp/smd-geo02b-linux --output-on-failure
 LD_LIBRARY_PATH=/tmp/smd-geo02b-occt-install/lib \
-  /tmp/smd-geo02b-linux/libgeometry/smd-solid-tests public/samples/plain_column.smd
+  /tmp/smd-geo02b-linux/libgeometry/smd-solid-tests public/samples/Columns/COL_PLAIN.smd
 env -u CMAKE_PREFIX_PATH -u OpenCASCADE_DIR -u CMAKE_TOOLCHAIN_FILE \
   cmake -S . -B /tmp/smd-geo02b-linux-default -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build /tmp/smd-geo02b-linux-default --parallel 6

@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
         std::cout << "ok " << ++checks << " - " << name << '\n';
     };
     try {
-        require(argc==2,"Usage: smd-principal-prism-tests plain_column.smd");
+        require(argc==2,"Usage: smd-principal-prism-tests COL_PLAIN.smd");
         test("plain native parser -> faces -> shell -> solid -> candidate",[&] {
             std::ifstream file(argv[1],std::ios::binary); require(file.good(),"plain fixture readable");
             const std::string text{std::istreambuf_iterator<char>(file),{}}; require(!file.bad(),"fixture read complete");

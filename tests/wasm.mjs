@@ -16,7 +16,12 @@ const wasm = await factory({ wasmBinary: readFileSync(join(assets, 'smd-parser.w
 const temp = mkdtempSync(join(tmpdir(), 'smd-wasm-test-'));
 const encode = text => new TextEncoder().encode(text);
 const golden = name => JSON.parse(readFileSync(join(root, `libsmd/tests/golden/${name}.json`), 'utf8'));
-const sample = name => readFileSync(join(root, `public/samples/${name}.smd`));
+const specimenFiles = {
+  plain_column: 'COL_PLAIN.smd',
+  pocket_column: 'COL_SINGLE-POCKET.smd',
+};
+const samplePath = name => join(root, 'public/samples/Columns', specimenFiles[name]);
+const sample = name => readFileSync(samplePath(name));
 let checks = 0;
 async function test(name, fn) { await fn(); console.log(`ok ${++checks} - ${name}`); }
 
@@ -71,7 +76,7 @@ try {
     const result = abi(bytes);
     assert.equal(result.status, 0);
     const output = JSON.parse(result.text);
-    const native = JSON.parse(execFileSync(resolve(extract), [join(root, `public/samples/${name}.smd`)], { encoding: 'utf8' }));
+    const native = JSON.parse(execFileSync(resolve(extract), [samplePath(name)], { encoding: 'utf8' }));
     compare(output, native);
     compare(output, golden(name));
     const text = new TextDecoder('windows-1252').decode(bytes);

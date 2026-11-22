@@ -62,7 +62,7 @@ cmake --build /tmp/smd-geo01a-build --parallel 6
 LD_LIBRARY_PATH=/tmp/smd-occt-8.0.1/lib \
   ctest --test-dir /tmp/smd-geo01a-build --output-on-failure
 LD_LIBRARY_PATH=/tmp/smd-occt-8.0.1/lib \
-  /tmp/smd-geo01a-build/libgeometry/smd-geometry-tests public/samples/plain_column.smd
+  /tmp/smd-geo01a-build/libgeometry/smd-geometry-tests public/samples/Columns/COL_PLAIN.smd
 ```
 
 **Passed:** 3/3 CTests (`native`, `reference-regression`, `geometry-faces`);

@@ -95,7 +95,7 @@ LD_LIBRARY_PATH=/tmp/smd-occt-8.0.1/lib \
   ctest --test-dir /tmp/smd-geo01b-build --output-on-failure
 LD_LIBRARY_PATH=/tmp/smd-occt-8.0.1/lib \
   /tmp/smd-geo01b-build/libgeometry/smd-geometry-tests \
-  public/samples/plain_column.smd public/samples/pocket_column.smd
+  public/samples/Columns/COL_PLAIN.smd public/samples/Columns/COL_SINGLE-POCKET.smd
 ```
 
 **Passed:** build, 3/3 CTests (`native`, `reference-regression`, `geometry-faces`),

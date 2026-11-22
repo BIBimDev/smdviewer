@@ -1,0 +1,60 @@
+#pragma once
+#include "smd_geometry/boolean_decomposition.hpp"
+#include <filesystem>
+#include <map>
+#include <memory>
+#include <string>
+
+namespace inspector {
+enum class Representation { Faces, Solid, Candidate, Extensions, Reductions };
+enum class Kind { Vertex, Edge, Face, Body };
+const char* name(Representation);
+const char* name(Kind);
+
+// Owned pipeline evidence. The UI retains this through a const shared pointer.
+struct Document {
+    std::string identity; // SHA-256 of canonical path plus the exact bytes read.
+    smd::ParsedSmd parsed;
+    smd_geometry::FaceConversion converted;
+    smd_geometry::ShellAssembly shell;
+    smd_geometry::SolidAssembly source;
+    smd_geometry::PrincipalPrismCandidate candidate;
+    smd_geometry::BooleanDecomposition decomposition;
+};
+std::shared_ptr<const Document> buildDocument(std::string identity, smd::ParsedSmd parsed);
+std::shared_ptr<const Document> loadDocument(const std::filesystem::path& file);
+std::string pathText(const std::filesystem::path&); // UTF-8, including diagnostics.
+
+struct Entity {
+    std::string id;
+    Kind kind;
+    TopoDS_Shape original, display;
+    std::optional<std::size_t> sourceFace, sourceVertex;
+    std::optional<std::pair<std::size_t, std::size_t>> sourceEndpoints;
+    std::vector<smd_geometry::SourceEdgeUse> edgeUses;
+    std::vector<smd_geometry::FaceAncestor> ancestors;
+};
+struct Component {
+    std::string id, label;
+    TopoDS_Shape original, display;
+    std::vector<Entity> entities;
+};
+struct Display {
+    Representation representation;
+    std::vector<Component> components;
+    // Presentation-only private copies. No entities, IDs or source mappings.
+    struct Outline { Representation representation; TopoDS_Shape shape; };
+    std::vector<Outline> context;
+};
+// No meshing of original shapes. Copy history establishes identity, never proximity.
+Display prepareDisplay(const Document&, Representation);
+std::string describe(const Document&, const Entity&);
+// Session-only and independent of all geometry/source identities.
+class Tags {
+public:
+    void set(const std::string& id, const std::string& value);
+    std::string get(const std::string& id) const;
+private:
+    std::map<std::string, std::string> values_;
+};
+} // namespace inspector
