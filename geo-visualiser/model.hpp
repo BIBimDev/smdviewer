@@ -23,6 +23,7 @@ struct Document {
 };
 std::shared_ptr<const Document> buildDocument(std::string identity, smd::ParsedSmd parsed);
 std::shared_ptr<const Document> loadDocument(const std::filesystem::path& file);
+void exportDocument(const Document&, const std::filesystem::path& destination);
 std::string pathText(const std::filesystem::path&); // UTF-8, including diagnostics.
 
 struct Entity {

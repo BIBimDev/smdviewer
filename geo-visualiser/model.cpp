@@ -1,5 +1,6 @@
 #include "model.hpp"
 #include "smd/parser.hpp"
+#include "smd_geometry/export.hpp"
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepTools.hxx>
 #include <BRepTools_WireExplorer.hxx>
@@ -85,6 +86,15 @@ std::shared_ptr<const Document> loadDocument(const std::filesystem::path& path) 
     } catch(const std::exception& e) {
         throw std::runtime_error(pathText(path) + ": " + stage + ": " + e.what());
     }
+}
+
+void exportDocument(const Document& document, const std::filesystem::path& destination) {
+    smd_geometry::ExportBodies bodies{document.source.solid, document.candidate.solid, {}, {}};
+    bodies.A.reserve(document.decomposition.extensions.size());
+    bodies.R.reserve(document.decomposition.reductions.size());
+    for(const auto& extension : document.decomposition.extensions) bodies.A.push_back(extension.solid);
+    for(const auto& reduction : document.decomposition.reductions) bodies.R.push_back(reduction.solid);
+    smd_geometry::exportBrep(bodies, destination);
 }
 
 namespace {

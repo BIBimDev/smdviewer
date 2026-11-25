@@ -31,7 +31,7 @@ configure_file(build_info.hpp.in generated/build_info.hpp @ONLY)
 target_include_directories(smd-inspector-desktop PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 add_executable(geo-visualiser main.cpp)
 target_link_libraries(geo-visualiser PRIVATE smd-inspector-desktop)
-# Resolve the initial fixture and dialog directory independently of cwd.
+# Resolve the initial fixture and dialog directories independently of cwd.
 configure_file(fixtures.hpp.in generated/fixtures.hpp @ONLY)
 target_include_directories(geo-visualiser PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if(WIN32)
@@ -55,9 +55,13 @@ if(BUILD_TESTING)
     set_tests_properties(inspector-settings PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(smd-inspector-captures captures.cpp)
     target_link_libraries(smd-inspector-captures PRIVATE smd-inspector-desktop)
-    add_executable(smd-inspector-tests tests.cpp camera_tests.cpp display_tests.cpp refine_tests.cpp)
+    add_executable(smd-inspector-tests tests.cpp camera_tests.cpp display_tests.cpp refine_tests.cpp export_tests.cpp)
     target_link_libraries(smd-inspector-tests PRIVATE smd-inspector-desktop)
+    add_dependencies(smd-inspector-tests smd-export-qualification-tests)
     add_test(NAME inspector-adapter COMMAND smd-inspector-tests "${PROJECT_SOURCE_DIR}/public/samples")
+    add_test(NAME inspector-export-adapter COMMAND smd-inspector-tests "${PROJECT_SOURCE_DIR}/public/samples"
+        --export-adapter "$<TARGET_FILE:smd-export-qualification-tests>")
     # Explicit interactive-capable execution, not part of headless CTest.
     # smd-inspector-tests <sample-directory> --render
+    # smd-inspector-tests <sample-directory> --export <qualification executable>
 endif()

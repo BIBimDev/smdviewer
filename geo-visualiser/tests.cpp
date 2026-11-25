@@ -1,6 +1,7 @@
 #include "model.hpp"
 #include "camera_tests.hpp"
 #include "display_tests.hpp"
+#include "export_tests.hpp"
 #include "refine_tests.hpp"
 #include <QSettings>
 #include <QKeyEvent>
@@ -382,7 +383,7 @@ void workspaceChecks(Window& window,Viewport& canvas) {
 }
 void uiChecks(const std::filesystem::path& samples,const QString& preferenceDirectory) {
     Copies copies(samples);
-    Window window(samples);window.show();QApplication::processEvents();
+    Window window(samples,copies.bad.parent_path()/"exports");window.show();QApplication::processEvents();
     auto* menuButton=window.findChild<QToolButton*>("mainMenu");
     auto* fileMenu=window.findChild<QMenu*>("fileMenu");
     auto* open=window.findChild<QAction*>("openSmd");
@@ -792,10 +793,10 @@ void uiChecks(const std::filesystem::path& samples,const QString& preferenceDire
     const auto reopenedTag=tagText();
     require(reopenedTag==originalTag,"stale edit must preserve the original tag, got: "+reopenedTag.toStdString());
     std::cout<<"PASS — stale tag edit after queued viewport cleanup preserves the original value on reopen\n";
-    Window fresh(samples);fresh.show();QApplication::processEvents();
+    Window fresh(samples,copies.bad.parent_path()/"exports");fresh.show();QApplication::processEvents();
     auto* freshTree=fresh.findChild<QTreeWidget*>("entities");
     require(editSessionTag(freshTree,firstFaceRow(freshTree),{},true).isEmpty(),"fresh window has no persisted tags");
-    Window missing(samples/"missing-inspector-fixtures");missing.show();QApplication::processEvents();
+    Window missing(samples/"missing-inspector-fixtures",copies.bad.parent_path()/"exports");missing.show();QApplication::processEvents();
     require(missing.findChild<QTreeWidget*>("entities")->topLevelItemCount()==0,"startup failure exposes no results");
     require(missing.findChild<QLabel*>("status")->text().contains("read:"),"visible missing-fixture stage diagnostic");
     require(missing.windowTitle()=="GEO-Visualiser","failed startup keeps the unloaded title");
@@ -806,14 +807,28 @@ int main(int argc,char** argv) {
     try {
         std::cout<<std::unitbuf;
         const bool freshWindow=argc==4 && std::string(argv[2])=="--fresh-window";
+        const bool exportAdapter=argc==4 && std::string(argv[2])=="--export-adapter";
+        const bool exportUi=argc==4 && std::string(argv[2])=="--export";
         QTemporaryDir preferences;
         require(preferences.isValid(),"isolated preferences directory");
         const auto preferenceDirectory=freshWindow?QString::fromLocal8Bit(argv[3]):preferences.path();
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,preferenceDirectory);
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,preferenceDirectory);
-        require(argc==2 || freshWindow || (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera" || std::string(argv[2])=="--display")),
-                "usage: smd-inspector-tests <samples> [--render|--open|--camera|--display|--fresh-window <test preferences>]");
+        require(argc==2 || freshWindow || exportAdapter || exportUi ||
+                (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera" || std::string(argv[2])=="--display")),
+                "usage: smd-inspector-tests <samples> [--render|--open|--camera|--display|--fresh-window <test preferences>|--export[-adapter] <qualification executable>]");
         const std::filesystem::path samples=argv[1];
+        if(exportAdapter) {
+            QCoreApplication application(argc,argv);
+            exportAdapterChecks(samples,QString::fromLocal8Bit(argv[3]));
+            return 0;
+        }
+        if(exportUi) {
+            QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+            QApplication application(argc,argv);
+            exportUiChecks(samples,QString::fromLocal8Bit(argv[3]));
+            return 0;
+        }
         if(argc==3 && std::string(argv[2])=="--open") {
             QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
             QApplication application(argc,argv);
@@ -822,7 +837,8 @@ int main(int argc,char** argv) {
         }
         if(freshWindow) {
             QApplication application(argc,argv);
-            Window fresh(samples);fresh.show();QApplication::processEvents();
+            Window fresh(samples,std::filesystem::path(preferenceDirectory.toStdU16String())/"exports");
+            fresh.show();QApplication::processEvents();
             require(fresh.windowTitle()==titleFor(fixtures[0]),"restart loads plain file and sets its title");
             Viewport* viewport=nullptr;
             for(auto* child:fresh.findChildren<QWidget*>()) if(auto* candidate=dynamic_cast<Viewport*>(child)) viewport=candidate;
