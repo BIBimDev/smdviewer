@@ -91,6 +91,28 @@ positive body displaying missing material. There is no reconstructed S' view.
   reopening the same canonical file path with identical bytes in the same
   window. Other paths and changed bytes have separate tags. Restart clears them.
 
+## Export geometry
+
+With a validated SMD open, choose **☰ → File → Export…**. The save dialog
+starts in the checkout’s `exports/` directory and replaces the active file’s
+final extension with `.json`. The checkout path is configured by CMake, so the
+process working directory has no effect. The directory is created when you
+invoke Export. You can choose another folder or filename. If the default folder
+cannot be created, the viewer reports the reason and opens the dialog from the
+active SMD’s folder, or your home directory if that folder is gone. Each
+invocation proposes the default again.
+
+Export writes one GEO-Export JSON/BREP file with the validated solid S, the
+principal-prism candidate B, and all extensions A and reductions R in raw
+source-local millimetres. The viewport, selection, and component isolation
+have no effect on the exported bodies. The export is for geometry interchange.
+A complete SMD source archive requires the original SMD and its source evidence.
+
+Choose a new filename when a destination already exists. Cancel leaves the
+workspace intact and writes no export. On success, the viewer shows the full
+destination path. On failure, it shows that path and the diagnostic while
+preserving the active document and view.
+
 ## Evidence and display architecture
 
 The loader calls `parseSmd10125`, `convertFaces`, `assembleShell`, `buildSolid`,

@@ -71,7 +71,7 @@ Authoritative nomenclature (unchanged):
 | **GEO-EXP-D03** | Use a minimal **C++20 / OCCT-only public geometry interface**; no Qt, OpenGL, viewer types or viewer-to-export reverse dependency. | Accept and return S/B/A/R solids directly; an upstream caller supplies already-computed results. |
 | **GEO-EXP-D04** | **Exactly one self-contained JSON file per exported element**, with the ASCII BREP serializations embedded as JSON strings. | No sidecar BREP files, per-element directory trees or filename manifests. Header and S/B/A/R are in a single document. |
 | **GEO-EXP-D05** | Keep the export implementation **inside the existing `libgeometry/` library**. | Avoid a separate library target or unnecessary additional directory hierarchy at this stage. |
-| **GEO-EXP-D06** | GEO-Visualiser's future default export directory is **`public/exports/`**, resolved relative to the repository/project root rather than the process working directory. | Implement only in the viewer-integration milestone, not as a dependency of the export library. |
+| **GEO-EXP-D06** (Revision 01, accepted 2026-11-26) | The GEO-Visualiser shall default to **`exports/`** directly beneath the repository/project root, resolved independently of the process working directory. Create the directory on demand and allow the user to select an alternative destination. | The default directory is ignored by Git, is outside the browser application's public asset tree and is excluded from the browser build distribution. The export library and headless CLI remain independent of the viewer default. |
 
 D01 and D04 are compatible: a BREP is a single solid's serialization, **not** necessarily a separate filesystem file.
 
@@ -441,13 +441,104 @@ GEO-EXP-02 verification checks.
 **Scope**
 
 - Add a minimal GEO-Visualiser **Export** action that passes the already-available S/B/A/R solids to GEO-Export.
-- Default destination directory: **`public/exports/`**.
+- Use **`exports/`** directly beneath the repository/project root as the default destination. Resolve it independently of the process working directory, create it on demand and allow the user to select an alternative destination.
 - Report success and errors without altering viewer geometry, selection, tags or rendering.
 - Ensure exported files are not accidentally committed or distributed via the browser build.
 
 **Acceptance:** One action produces the same single-file JSON/BREP interchange format as the headless facility; the dependency direction remains viewer → geometry/export, never reverse; existing viewer tests remain passing.
 
-**Status:** Not started.
+**Status:** **Implemented / pending independent review.** Implementation and
+tests are at `a52d4b9eb1f251c96347616016b28f4b77e95a0c` on
+`codex/geo-exp-04-viewer-export`. The CTest suites and focused export UI were
+rerun at `2f93b94df93224f80c418d680ce701cb8c03e04c` after a test-only path
+portability change. The first branch commit is the reviewed
+GEO-EXP-D06-R01 amendment `f3902ac6eb5607b743f5f6c691e9da3787b367b9`, based on
+`main` at `1fc79b04dc55555590a8282883b81dd129b8e7b7`. [PR #22](https://github.com/BIBimDev/smdviewer/pull/22)
+
+**Viewer behavior.** File → Export… is available with a validated active
+document, including documents with empty A or R. The save dialog starts at the
+CMake-configured repository-root `exports/` and proposes the active SMD
+basename with its final extension replaced by `.json`. It creates the
+directory on demand and accepts an alternate Unicode path. If creation fails,
+it reports the path and error and offers a destination starting from the active
+SMD folder, with the home directory as fallback if that folder is gone.
+
+The viewer sends its active document's original S/B/A/R solids to
+`smd_geometry::exportBrep()` in collection order. Existing files are rejected,
+with a chance to choose another filename. The exporter enforces exclusive
+creation. Cancellation writes no file. Success reports the full output path,
+and failures report the path and diagnostic. The load status and viewer state
+are preserved. The dialog checks document identity before exporting.
+
+**Geometric verification.** The viewer adapter exported all five qualified
+specimens to temporary directories. The existing GEO-EXP-02 verifier used
+`importBrep()` to compare every imported S/B/A/R body against the
+qualified pipeline result. It reconstructed S′ using the imported B/A/R with
+the accepted tolerances. Directed material residuals were empty in both
+directions, all bounded faces were covered, and the reported reconstruction
+volume difference was 0 mm³ for each specimen.
+
+| Specimen | Imported A / R | Covered faces S / S′ |
+| --- | ---: | ---: |
+| `COL_PLAIN.smd` | 0 / 0 | 6 / 6 |
+| `COL_SINGLE-POCKET.smd` | 0 / 1 | 10 / 10 |
+| `COL_PLAIN_SINGLE-CORBEL.smd` | 1 / 0 | 10 / 12 |
+| `COL_PLAIN_HALF-CORBEL.smd` | 1 / 0 | 10 / 11 |
+| `COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd` | 1 / 1 | 14 / 15 |
+
+**UI verification.** The actual File action and save dialog passed the
+`--export` regression under X11/xcb. The test covered action enablement, empty
+groups, directory resolution from another working directory, on-demand
+creation, Unicode names, alternate destinations, cancellation, rejection of an
+existing file, write and directory-creation failures, preservation after a
+failed open, and document invalidation during the dialog. It checked title,
+active path, selection, Properties, session tags, camera, projection, display
+style, isolation and appearance. Independent import and reconstruction passed
+for a combined specimen exported with one extension isolated after its loaded
+SMD copy had been removed from disk.
+
+**Build and regression verification.** Release builds used Kubuntu 26.04.1
+x86-64, GCC 15.2.0, C++20, CMake 4.2.3, Ninja 1.13.2, visualization-enabled
+OCCT 8.0.1, Qt 6.10.2 and nlohmann/json 3.11.3. Tests used Xvfb with GLX and
+Mesa 26.0.8 llvmpipe (software OpenGL 4.5) for desktop modes. The actual
+`geo-visualiser` executable also loaded the initial sample when launched from
+an unrelated directory and left the default export directory uncreated.
+
+| Build directory | CMake options | CTest result |
+| --- | --- | ---: |
+| `/tmp/smd-exp04-viewer` | `SMD_BUILD_GEOMETRY=ON`, `SMD_BUILD_GEO_VISUALISER=ON` | 24/24 |
+| `/tmp/smd-exp04-headless` | `SMD_BUILD_GEOMETRY=ON`, `SMD_BUILD_GEO_VISUALISER=OFF` | 21/21 |
+| `/tmp/smd-exp04-parser` | Default options | 2/2 |
+
+Each configuration used `cmake -S . -B <build> -G Ninja
+-DCMAKE_BUILD_TYPE=Release`, `cmake --build <build> --parallel`, and
+`ctest --test-dir <build> --output-on-failure`. Geometry configurations used
+`OpenCASCADE_DIR=/home/dhu/.local/opt/occt-8.0.1-visual/lib/cmake/opencascade`
+and `nlohmann_json_DIR=/tmp/smd-geo-exp-01-deps/usr/share/cmake/nlohmann_json`.
+Geometry tests used `LD_LIBRARY_PATH=/home/dhu/.local/opt/occt-8.0.1-visual/lib`.
+The headless link and runtime dependency checks showed no Qt or OpenGL. The
+parser-only cache contained no OCCT, Qt or nlohmann/json discovery and the
+parser CLI linked only the system runtime.
+
+The desktop checks invoked
+`smd-inspector-tests "$PWD/public/samples" --export <qualification-executable>`
+and the existing `--open`, `--camera`, `--display`, and `--render` modes under
+`QT_QPA_PLATFORM=xcb`. The focused rerun used the executables in
+`/tmp/smd-exp04-viewer/verified-bin/`, configured with
+`-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=/tmp/smd-exp04-viewer/verified-bin`. The
+file-open, camera, display, full rendering, and session-tag regressions passed.
+The full render run used the test-only revision above. The existing
+origin-arrow pixel check also fails on the reviewed amendment at Qt scale 1
+under llvmpipe. The display and full render suites passed at
+`QT_SCALE_FACTOR=2` with the same renderer and unmodified assertions. A full
+render attempt at Qt scale 1.25 stopped at the scale-bar projected-distance
+assertion, reproduced in the
+reviewed amendment's camera mode at the same scale.
+
+**Limits.** Windows/MSVC verification is outstanding. The root
+`/exports/` ignore rule still matches, and the browser asset configuration is
+identical to the sentinel-verified amendment. These controls cover ordinary Git
+staging and the production distribution.
 
 ### Milestone tracking register
 
@@ -456,7 +547,7 @@ GEO-EXP-02 verification checks.
 | GEO-EXP-01 | `codex/geo-exp-01-json-brep` | [#16](https://github.com/BIBimDev/smdviewer/pull/16) | `3070ef6219cb05398ba9e14c3b50ee6ca4b1fd7b` / Kubuntu 26.04 x86-64 | Geometry-enabled 8/8 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
 | GEO-EXP-02 | `codex/geo-exp-02-qualification` | [#18](https://github.com/BIBimDev/smdviewer/pull/18) | `d87a31b72a031dbc46206ac083a6517fc6a86d3f` / Kubuntu 26.04.1 x86-64 | Focused 7/7, full geometry 15/15 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
 | GEO-EXP-03 | `codex/geo-exp-03-cli` | [#20](https://github.com/BIBimDev/smdviewer/pull/20) | `83d53a038d17377314d47b8101c8151ba9eb52a3` / Kubuntu 26.04.1 x86-64 | Focused CLI 6/6, full geometry 21/21 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
-| GEO-EXP-04 | — | — | — | — | Planned |
+| GEO-EXP-04 | `codex/geo-exp-04-viewer-export` | [#22](https://github.com/BIBimDev/smdviewer/pull/22) | `a52d4b9eb1f251c96347616016b28f4b77e95a0c` and `2f93b94df93224f80c418d680ce701cb8c03e04c` / Kubuntu 26.04.1 x86-64 | Viewer 24/24, headless geometry 21/21, parser-only 2/2 CTests and all five desktop modes passed | Implemented / pending independent review |
 
 ## 5. Verification policy and known constraints
 
@@ -474,8 +565,8 @@ GEO-EXP-02 verification checks.
 1. **JSON implementation dependency:** inspect the repository's current JSON facilities, choose the smallest maintainable production reader/writer and document the decision in GEO-EXP-01. The existing diagnostic JSON output is not automatically a suitable parser.
 2. **Overwrite/error semantics:** keep simple and explicit. In particular, avoid silent destruction of an existing export; select and test precise behavior in GEO-EXP-01, without introducing a broad filesystem transaction framework.
 3. **Failure and parse limits:** decide reasonable error handling for malformed/oversized input in GEO-EXP-01. Do not reinterpret BREP internals.
-4. **Public export directory:** `/public/exports/` is currently **not** ignored in `.gitignore`, and Vite commonly copies `public/` into the web distribution. Ignoring it in Git alone does **not** prevent publication. At GEO-EXP-04, verify and address both risks without broad unrelated housekeeping; treat industrial geometry as potentially confidential.
-5. **Naming of exported JSON documents.** GEO-EXP-03 requires an explicit output path. The viewer's default filename remains a GEO-EXP-04 choice.
+4. **Export-directory confidentiality (resolved by GEO-EXP-D06-R01).** The default directory is covered by the root Git ignore rule `/exports/` and sits outside Vite's public assets. GEO-EXP-04 verified working-directory-independent resolution, on-demand creation and alternate destinations.
+5. **Naming of exported JSON documents (implemented in GEO-EXP-04).** GEO-EXP-03 accepts an explicit output path. The viewer proposes the active SMD basename with its final extension replaced by `.json`.
 
 ## 6. Handoff protocol for each successor session
 
@@ -542,6 +633,8 @@ This ledger is intentionally **ephemeral**. After GEO-EXP-04 and all agreed foll
 | 2026-11-25 | GEO-EXP-02 accepted after independent technical review and closed. PR #18 merged as `631f11d8eb3947247a1dca2b42c42d9717862773`. |
 | 2026-11-25 | GEO-EXP-03 implemented and verified on Kubuntu. PR #20 opened for independent review. |
 | 2026-11-25 | GEO-EXP-03 accepted and closed after independent technical review. PR #20 merged as `9bc1459dee7177ee7367ddb08f1e79184272050e`. |
+| 2026-11-26 | GEO-EXP-D06-R01 accepted. The default moves from `public/exports/` to repository-root `exports/` to keep potentially confidential geometry outside the browser asset tree and distribution without special Vite exclusions. GEO-EXP-04 implementation remains pending. |
+| 2026-11-26 | GEO-EXP-04 viewer export implemented and exercised on Kubuntu. PR #22 tracks the integration for independent review. |
 
-**Current handoff status:** GEO-EXP-03 is accepted and closed. GEO-EXP-04
-remains planned and requires a separate assignment.
+**Current handoff status:** GEO-EXP-01 through GEO-EXP-03 are accepted and
+closed. GEO-EXP-04 is implemented and pending independent review in PR #22.

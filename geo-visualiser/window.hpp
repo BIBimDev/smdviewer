@@ -10,12 +10,13 @@
 namespace inspector {
 class Window : public QMainWindow {
 public:
-    explicit Window(std::filesystem::path samples);
+    Window(std::filesystem::path samples, std::filesystem::path exportDirectory);
     ~Window() override;
 protected:
     bool eventFilter(QObject*, QEvent*) override;
 private:
     void open();
+    void exportGeometry();
     bool load(const std::filesystem::path& file);
     void representation();
     void showComponents();
@@ -27,7 +28,8 @@ private:
     void setLoadStatus(const QString&);
     void fail(const std::string&);
     const Entity* entity(const std::string&) const;
-    std::filesystem::path samples_;
+    std::filesystem::path samples_, exportDirectory_;
+    QAction* exportAction_;
     std::shared_ptr<const Document> document_;
     QString activePath_;
     Display display_{Representation::Solid,{}, {}};

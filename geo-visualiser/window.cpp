@@ -47,7 +47,8 @@ protected:
     }
 };
 }
-Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
+Window::Window(std::filesystem::path samples, std::filesystem::path exportDirectory)
+    : samples_(std::move(samples)), exportDirectory_(std::move(exportDirectory)) {
     preferences_.setFallbacksEnabled(false);
     setWindowTitle("GEO-Visualiser");
     resize(1400,900);
@@ -97,6 +98,9 @@ Window::Window(std::filesystem::path samples) : samples_(std::move(samples)) {
     openAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_O));
     openAction->setAutoRepeat(false);
     addAction(openAction);
+    exportAction_=fileMenu->addAction("Export…",this,&Window::exportGeometry);
+    exportAction_->setObjectName("exportAction");
+    exportAction_->setEnabled(false);
     auto* settingsAction=menu->addAction("Settings…",this,[this] { settings(); });
     settingsAction->setObjectName("settingsAction");
     auto* helpAction=menu->addAction("Help",this,[this] { help(); });helpAction->setObjectName("helpAction");
@@ -206,6 +210,7 @@ void Window::fail(const std::string& message) {
     viewport_->showDisplay(nullptr);
     viewport_->hide();
     document_.reset();
+    exportAction_->setEnabled(false);
     activePath_.clear();
     setWindowTitle("GEO-Visualiser");
     display_.components.clear();
@@ -225,6 +230,69 @@ void Window::open() {
     if(dialog.exec() != QDialog::Accepted) return;
     const auto files = dialog.selectedFiles();
     if(!files.isEmpty()) load(std::filesystem::path(files.front().toStdU16String()));
+}
+void Window::exportGeometry() {
+    if(!document_) return;
+    const std::weak_ptr<const Document> invokedDocument=document_;
+    const QFileInfo activeFile(activePath_);
+    auto filename=std::filesystem::path(activeFile.fileName().toStdU16String());
+    filename.replace_extension(".json");
+    const auto notify=[this](QMessageBox::Icon icon,const QString& title,const QString& text) {
+        QMessageBox message(icon,title,text,QMessageBox::Ok,this);
+        message.setTextFormat(Qt::PlainText);
+        message.exec();
+    };
+
+    auto directory=QString::fromStdU16String(exportDirectory_.u16string());
+    std::error_code error;
+    std::filesystem::create_directories(exportDirectory_,error);
+    if(error) {
+        notify(QMessageBox::Warning,"Default export directory unavailable",
+               "Could not create "+QDir::toNativeSeparators(directory)+"\n"+
+               QString::fromLocal8Bit(error.message())+"\nChoose another export destination.");
+        if(!document_ || invokedDocument.lock()!=document_) return;
+        directory=activeFile.absolutePath();
+        if(!QDir(directory).exists()) directory=QDir::homePath();
+    }
+
+    const auto proposedName=QString::fromStdU16String(filename.u16string());
+    for(;;) {
+        QFileDialog dialog(this);
+        dialog.setObjectName("exportGeometryDialog");
+        dialog.setWindowTitle("Export geometry");
+        dialog.setOption(QFileDialog::DontConfirmOverwrite);
+        dialog.setAcceptMode(QFileDialog::AcceptSave);
+        dialog.setFileMode(QFileDialog::AnyFile);
+        dialog.setNameFilter("GEO-Export JSON (*.json)");
+        dialog.setDefaultSuffix("json");
+        dialog.setDirectory(directory);
+        dialog.selectFile(proposedName);
+        if(dialog.exec()!=QDialog::Accepted) return;
+        const auto document=invokedDocument.lock();
+        if(!document || document!=document_) return;
+        const auto files=dialog.selectedFiles();
+        if(files.isEmpty()) return;
+        const QFileInfo target(files.front());
+        const auto path=QDir::toNativeSeparators(target.absoluteFilePath());
+        if(target.exists() || target.isSymLink()) {
+            notify(QMessageBox::Warning,"Export destination already exists",
+                   path+"\nChoose a new filename. The existing file has been preserved.");
+            if(document!=document_) return;
+            directory=target.absolutePath();
+            continue;
+        }
+        try {
+            exportDocument(*document,std::filesystem::path(path.toStdU16String()));
+        } catch(const Standard_Failure& e) {
+            notify(QMessageBox::Critical,"Export failed",path+"\n"+QString::fromUtf8(e.what()));
+            return;
+        } catch(const std::exception& e) {
+            notify(QMessageBox::Critical,"Export failed",path+"\n"+QString::fromUtf8(e.what()));
+            return;
+        }
+        notify(QMessageBox::Information,"Geometry exported",path);
+        return;
+    }
 }
 bool Window::load(const std::filesystem::path& file) {
     std::shared_ptr<const Document> pending;
@@ -264,6 +332,7 @@ bool Window::load(const std::filesystem::path& file) {
     activePath_=QDir::toNativeSeparators(QFileInfo(QString::fromStdU16String(file.u16string())).absoluteFilePath());
     setLoadStatus(status_->text());
     setWindowTitle("GEO-Visualiser | "+QString::fromStdU16String(file.filename().u16string()));
+    exportAction_->setEnabled(true);
     return true;
 }
 void Window::representation() {

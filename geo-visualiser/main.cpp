@@ -6,7 +6,8 @@
 int main(int argc, char** argv) {
     QApplication application(argc,argv);
     try {
-        inspector::Window window{std::filesystem::path(inspectorSampleDirectory)};
+        inspector::Window window{std::filesystem::path(inspectorSampleDirectory),
+                                 std::filesystem::path(inspectorExportDirectory)};
         window.show();
         return application.exec();
     } catch(const std::exception& e) {
