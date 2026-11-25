@@ -338,14 +338,53 @@ Qt export action with the combined specimen's extension isolated. It
 confirmed A/R 1/1, zero directed residual solids, complete bounded-face
 coverage (14/15) and a 0 mm³ reconstruction-volume difference.
 
-Manual owner acceptance and qualification of an owner-produced export remain
-pending. The automated UI export is separately qualified. Windows/MSVC
-verification of GEO-Export remains outstanding.
+### Owner acceptance and additional specimen
+
+On 2026-11-26, the project owner confirmed successful manual loading and
+export of `COL_SINGLE-POCKET_DOUBLE-CORBEL.smd`, the additional specimen with
+two corbels and a tapered pocket. This specimen is outside the original five
+automated STRAKON regression fixtures. The owner-produced file was located at
+`exports/COL_SINGLE-POCKET_DOUBLE-CORBEL.json`. Its size was 26,383 bytes and
+its SHA-256 was
+`4fe180e9e4049da7af18a893cc5522b5a5a60cc15b339d07c75f02820597757e`.
+The checksum matched before and after qualification.
+
+The established native OCCT 8.0.1 verifier checked the original export against
+the corresponding SMD with the existing qualification criteria.
+
+```sh
+/tmp/smd-geo-export-viewer/libgeometry/smd-export-qualification-tests \
+  public/samples/Columns/COL_SINGLE-POCKET_DOUBLE-CORBEL.smd \
+  2 1 exports/COL_SINGLE-POCKET_DOUBLE-CORBEL.json
+```
+
+All five imported solids passed the per-body checks. The two additions and
+one reduction reconstructed one valid solid. Both directed Boolean residuals
+were empty, with coverage of all 18 faces of S and all 22 faces of S′.
+The reconstruction-volume difference was 0 mm³. A separate read-only native
+import measured the following volumes, rounded to the nearest mm³.
+
+| Body | Volume (mm³) |
+| --- | ---: |
+| S | 2,937,450,000 |
+| B | 2,883,750,000 |
+| A[0] | 52,500,000 |
+| A[1] | 52,500,000 |
+| R[0] | 51,300,000 |
+
+The supplied supplementary interchange check used OCCT 7.9.3 Python
+bindings. It reported five valid imported solids, two additions, one
+reduction, one valid reconstructed solid, zero directed material residuals,
+and zero reconstruction-volume difference. The official qualification for
+this specimen is the native OCCT 8.0.1 run above.
+
+Windows/MSVC verification of GEO-Export remains outstanding.
 
 ## 10. Known limitations
 
-- Qualification covers the five named STRAKON specimens and the synthetic
-  planar case. General STRAKON inputs and other geometric interpretations are
+- Qualification covers the five named automated STRAKON specimens, the
+  synthetic planar case, and the additional owner-operated double-corbel
+  specimen. General STRAKON inputs and other geometric interpretations are
   outside that evidence. The source B-rep remains the evidence record.
 - The implementation is pinned to OCCT 8.0.1. Format qualification covers
   this kernel version. The importer delegates native BREP syntax to OCCT and
@@ -402,9 +441,11 @@ The administrative closure PRs recorded these commits.
 | GEO-EXP-02 | [#19](https://github.com/BIBimDev/smdviewer/pull/19) | `0f1332f400fc0dec8aaf5ec1b1d66dfb641937df` | `50450e8bc3f00c05f7fda4b60095ea2c825ff277` |
 | GEO-EXP-03 | [#21](https://github.com/BIBimDev/smdviewer/pull/21) | `9dd20684702b48ebc80be4a80acf86de47098510` | `1fc79b04dc55555590a8282883b81dd129b8e7b7` |
 
-All four GEO-Export development milestones are implemented, accepted and
-integrated. This reference is the permanent successor to the temporary
-development ledger. Ledger retirement and formal documentation closure are
-submitted for independent review. The former root ledger remains available in
+GEO-EXP-04 was accepted and closed on 2026-11-26 after owner confirmation and
+native qualification of the operator-produced export. All four GEO-Export
+development milestones are complete. This reference supersedes the temporary
+development ledger. The final documentation revision and ledger retirement
+are submitted for independent SHA verification in PR #23. The former root
+ledger remains available in
 [Git history](https://github.com/BIBimDev/smdviewer/blob/f6162c525b79958b8f6006228eab753ce14b877c/GEO-EXPORT-LEDGER.md).
 Governing repository instructions remain in [AGENTS.md](../AGENTS.md).
