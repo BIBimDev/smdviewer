@@ -817,18 +817,20 @@ int main(int argc,char** argv) {
         require(argc==2 || freshWindow || exportAdapter || exportUi ||
                 (argc==3 && (std::string(argv[2])=="--render" || std::string(argv[2])=="--open" || std::string(argv[2])=="--camera" || std::string(argv[2])=="--display")),
                 "usage: smd-inspector-tests <samples> [--render|--open|--camera|--display|--fresh-window <test preferences>|--export[-adapter] <qualification executable>]");
-        const std::filesystem::path samples=argv[1];
         if(exportAdapter) {
             QCoreApplication application(argc,argv);
-            exportAdapterChecks(samples,QString::fromLocal8Bit(argv[3]));
+            const auto arguments=application.arguments();
+            exportAdapterChecks(std::filesystem::path(arguments.at(1).toStdU16String()),arguments.at(3));
             return 0;
         }
         if(exportUi) {
             QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
             QApplication application(argc,argv);
-            exportUiChecks(samples,QString::fromLocal8Bit(argv[3]));
+            const auto arguments=application.arguments();
+            exportUiChecks(std::filesystem::path(arguments.at(1).toStdU16String()),arguments.at(3));
             return 0;
         }
+        const std::filesystem::path samples=argv[1];
         if(argc==3 && std::string(argv[2])=="--open") {
             QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
             QApplication application(argc,argv);

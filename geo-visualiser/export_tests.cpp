@@ -151,7 +151,7 @@ void exportUiChecks(const fs::path& samples,const QString& qualifier) {
     require(directory.isValid(),"temporary project directory");
     const auto root=nativePath(directory.path());
     const auto defaultDir=root/"project"/"exports";
-    const auto other=root/fs::path(u"other destination ü 柱");
+    const auto other=root/fs::path(u"other destination \u00fc \u67f1");
     fs::create_directories(other);
     struct RestoreCwd {
         QString path=QDir::currentPath();
@@ -212,7 +212,7 @@ void exportUiChecks(const fs::path& samples,const QString& qualifier) {
 
     const auto& specimen=specimens[4];
     const auto reference=sampleDir/"Columns"/specimen.filename;
-    const auto source=root/fs::path(u"active sample ü 柱.final.smd");
+    const auto source=root/fs::path(u"active sample \u00fc \u67f1.final.smd");
     auto proposed=source.filename();
     proposed.replace_extension(".json");
     fs::copy_file(reference,source);
@@ -256,7 +256,7 @@ void exportUiChecks(const fs::path& samples,const QString& qualifier) {
                 "viewer preserves session tag and settings");
     };
 
-    drive(*open,{openStep(bad),message("Open SMD failed",qtPath(bad),QMessageBox::Warning)});
+    drive(*open,{openStep(bad),message("Open SMD failed",QDir::fromNativeSeparators(qtPath(bad)),QMessageBox::Warning)});
     verifyState();
     // The original on-disk path is unavailable during all subsequent exports.
     // Success must come from the active document's already-computed bodies.
@@ -264,7 +264,7 @@ void exportUiChecks(const fs::path& samples,const QString& qualifier) {
 
     const auto existing=other/"existing.json";
     std::ofstream(existing)<<"keep this content";
-    const auto output=other/fs::path(u"chosen output ü 柱.json");
+    const auto output=other/fs::path(u"chosen output \u00fc \u67f1.json");
     drive(*action,{[&](QDialog& modal) {
         chooseFile(checkSave(modal,proposed,defaultDir),existing);
     },message("Export destination already exists",QDir::toNativeSeparators(qtPath(existing)),QMessageBox::Warning),
