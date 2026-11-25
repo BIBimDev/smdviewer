@@ -71,7 +71,7 @@ Authoritative nomenclature (unchanged):
 | **GEO-EXP-D03** | Use a minimal **C++20 / OCCT-only public geometry interface**; no Qt, OpenGL, viewer types or viewer-to-export reverse dependency. | Accept and return S/B/A/R solids directly; an upstream caller supplies already-computed results. |
 | **GEO-EXP-D04** | **Exactly one self-contained JSON file per exported element**, with the ASCII BREP serializations embedded as JSON strings. | No sidecar BREP files, per-element directory trees or filename manifests. Header and S/B/A/R are in a single document. |
 | **GEO-EXP-D05** | Keep the export implementation **inside the existing `libgeometry/` library**. | Avoid a separate library target or unnecessary additional directory hierarchy at this stage. |
-| **GEO-EXP-D06** | GEO-Visualiser's future default export directory is **`public/exports/`**, resolved relative to the repository/project root rather than the process working directory. | Implement only in the viewer-integration milestone, not as a dependency of the export library. |
+| **GEO-EXP-D06** (Revision 01, accepted 2026-11-26) | The GEO-Visualiser shall default to **`exports/`** directly beneath the repository/project root, resolved independently of the process working directory. Create the directory on demand and allow the user to select an alternative destination. | The default directory is ignored by Git, is outside the browser application's public asset tree and is excluded from the browser build distribution. The export library and headless CLI remain independent of the viewer default. |
 
 D01 and D04 are compatible: a BREP is a single solid's serialization, **not** necessarily a separate filesystem file.
 
@@ -441,7 +441,7 @@ GEO-EXP-02 verification checks.
 **Scope**
 
 - Add a minimal GEO-Visualiser **Export** action that passes the already-available S/B/A/R solids to GEO-Export.
-- Default destination directory: **`public/exports/`**.
+- Use **`exports/`** directly beneath the repository/project root as the default destination. Resolve it independently of the process working directory, create it on demand and allow the user to select an alternative destination.
 - Report success and errors without altering viewer geometry, selection, tags or rendering.
 - Ensure exported files are not accidentally committed or distributed via the browser build.
 
@@ -474,7 +474,7 @@ GEO-EXP-02 verification checks.
 1. **JSON implementation dependency:** inspect the repository's current JSON facilities, choose the smallest maintainable production reader/writer and document the decision in GEO-EXP-01. The existing diagnostic JSON output is not automatically a suitable parser.
 2. **Overwrite/error semantics:** keep simple and explicit. In particular, avoid silent destruction of an existing export; select and test precise behavior in GEO-EXP-01, without introducing a broad filesystem transaction framework.
 3. **Failure and parse limits:** decide reasonable error handling for malformed/oversized input in GEO-EXP-01. Do not reinterpret BREP internals.
-4. **Public export directory:** `/public/exports/` is currently **not** ignored in `.gitignore`, and Vite commonly copies `public/` into the web distribution. Ignoring it in Git alone does **not** prevent publication. At GEO-EXP-04, verify and address both risks without broad unrelated housekeeping; treat industrial geometry as potentially confidential.
+4. **Export-directory confidentiality.** GEO-EXP-D06-R01 resolves the location choice. Generated geometry may contain confidential industrial information, so the default directory is covered by the root Git ignore rule `/exports/` and sits outside Vite's public assets. GEO-EXP-04 still needs to verify that the viewer resolves and creates this directory on demand and honors an alternate destination.
 5. **Naming of exported JSON documents.** GEO-EXP-03 requires an explicit output path. The viewer's default filename remains a GEO-EXP-04 choice.
 
 ## 6. Handoff protocol for each successor session
@@ -542,6 +542,7 @@ This ledger is intentionally **ephemeral**. After GEO-EXP-04 and all agreed foll
 | 2026-11-25 | GEO-EXP-02 accepted after independent technical review and closed. PR #18 merged as `631f11d8eb3947247a1dca2b42c42d9717862773`. |
 | 2026-11-25 | GEO-EXP-03 implemented and verified on Kubuntu. PR #20 opened for independent review. |
 | 2026-11-25 | GEO-EXP-03 accepted and closed after independent technical review. PR #20 merged as `9bc1459dee7177ee7367ddb08f1e79184272050e`. |
+| 2026-11-26 | GEO-EXP-D06-R01 accepted. The default moves from `public/exports/` to repository-root `exports/` to keep potentially confidential geometry outside the browser asset tree and distribution without special Vite exclusions. GEO-EXP-04 implementation remains pending. |
 
 **Current handoff status:** GEO-EXP-03 is accepted and closed. GEO-EXP-04
 remains planned and requires a separate assignment.
