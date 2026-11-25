@@ -392,12 +392,17 @@ struct ExportReference {
     std::vector<BodyReference> A, R;
 };
 
-ExportReference writeExport(const fs::path& path, const ExportBodies& bodies,
-                            std::size_t additions, std::size_t reductions) {
+ExportReference measureBodies(const ExportBodies& bodies, std::size_t additions, std::size_t reductions) {
     require(bodies.A.size() == additions && bodies.R.size() == reductions, "unexpected upstream A/R counts");
     ExportReference reference{measure(bodies.S, volume(bodies.S)), measure(bodies.B, volume(bodies.B)), {}, {}};
     for (const auto& body : bodies.A) reference.A.push_back(measure(body, volume(body)));
     for (const auto& body : bodies.R) reference.R.push_back(measure(body, volume(body)));
+    return reference;
+}
+
+ExportReference writeExport(const fs::path& path, const ExportBodies& bodies,
+                            std::size_t additions, std::size_t reductions) {
+    auto reference = measureBodies(bodies, additions, reductions);
     exportBrep(bodies, path);
     require(fs::is_regular_file(path) && fs::file_size(path) > 0, "missing or empty JSON/BREP export");
     require(std::distance(fs::directory_iterator(path.parent_path()), fs::directory_iterator{}) == 1,
@@ -420,8 +425,7 @@ ExportBodies readExport(const fs::path& path, const ExportReference& reference) 
     return imported;
 }
 
-ExportReference exportFixture(const fs::path& path, const fs::path& fixture,
-                              std::size_t additions, std::size_t reductions) {
+ExportBodies fixtureBodies(const fs::path& fixture) {
     std::ifstream stream(fixture, std::ios::binary);
     require(stream.good(), "fixture is unreadable");
     const std::string text{std::istreambuf_iterator<char>(stream), {}};
@@ -433,7 +437,7 @@ ExportReference exportFixture(const fs::path& path, const fs::path& fixture,
     ExportBodies bodies{s.solid, b.solid, {}, {}};
     for (const auto& a : parts.extensions) bodies.A.push_back(a.solid);
     for (const auto& r : parts.reductions) bodies.R.push_back(r.solid);
-    return writeExport(path, bodies, additions, reductions);
+    return bodies;
 }
 
 void report(const ExportBodies& imported) {
@@ -519,16 +523,22 @@ void negativeControls(const ExportBodies& imported) {
 
 int main(int argc, char** argv) {
     try {
+        if (argc == 5) {
+            // The CLI already wrote this file in a separate process.
+            const auto reference = measureBodies(fixtureBodies(argv[1]), std::stoul(argv[2]), std::stoul(argv[3]));
+            report(readExport(argv[4], reference));
+            return 0;
+        }
         const TestDirectory directory;
         const auto path = directory.path / "qualification.json";
         if (argc == 4) {
             const fs::path fixture = argv[1];
             std::cout << fixture.filename().string() << '\n';
             // Only numeric measurements leave the scope of the upstream pipeline.
-            const auto reference = exportFixture(path, fixture, std::stoul(argv[2]), std::stoul(argv[3]));
+            const auto reference = writeExport(path, fixtureBodies(fixture), std::stoul(argv[2]), std::stoul(argv[3]));
             report(readExport(path, reference));
         } else {
-            require(argc == 2, "expected fixture and A/R counts, or synthetic/negative-controls");
+            require(argc == 2, "expected fixture, A/R counts and optional export path, or synthetic/negative-controls");
             const std::string_view mode = argv[1];
             require(mode == "synthetic" || mode == "negative-controls", "unknown qualification mode");
             const auto reference = exportSynthetic(path);
