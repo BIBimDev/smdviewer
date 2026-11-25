@@ -4,7 +4,7 @@
 >
 > Project: `smdviewer` · Repository: `BIBimDev/smdviewer`
 >
-> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 implemented / pending review.**
+> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 accepted and closed on 2026-11-25.**
 >
 > Intended lifecycle: maintain across GEO-EXP-01–04, then consolidate verified results into permanent project documentation and retire this ledger.
 
@@ -160,7 +160,11 @@ Development procedure: **agree focused task and acceptance criteria → Codex as
 
 **Acceptance:** Headless C++20 build succeeds with the pinned OCCT 8.0.1; focused round-trip and rejection tests pass; source objects remain unchanged; geometry library remains independent of Qt/viewer. Record exact commands, compiler/platform, test SHA and resulting PR.
 
-**Status:** **Implemented / pending review** in [PR #16](https://github.com/BIBimDev/smdviewer/pull/16).
+**Status:** **Accepted and closed on 2026-11-25.** [PR #16](https://github.com/BIBimDev/smdviewer/pull/16)
+was merged into `main` as `73779deef01650c0d9d4f090f1839dc289cf4c98`.
+The reviewed PR HEAD was `afe6b84686cbe7a263a11d520cb2df5c8c0aaa59`.
+The reviewed implementation and previously tested commit was
+`3070ef6219cb05398ba9e14c3b50ee6ca4b1fd7b`.
 
 The public API is `smd_geometry::ExportBodies`, `exportBrep`, and `importBrep`
 in `<smd_geometry/export.hpp>`. The implementation uses `BRepTools::Write`
@@ -212,7 +216,14 @@ ctest --test-dir /tmp/smd-geo-exp-01-parser --output-on-failure
   and unmodified source shapes with mesh and normals. Rejection cases covered
   malformed JSON, incompatible headers, partial BREP, null and non-solid
   shapes, missing paths and existing output.
-- Windows execution and the five-specimen export qualification are pending.
+- Windows/MSVC verification remains outstanding. The five-specimen export
+  qualification is the next milestone, GEO-EXP-02.
+
+**Non-blocking review observations**
+
+- Include the affected file path in file I/O diagnostics.
+- Clarify how to provision the `nlohmann_json` development package for
+  geometry-enabled builds across platforms, including Windows/MSVC.
 
 ### GEO-EXP-02 — Qualified specimen and geometric-equivalence regression
 
@@ -265,8 +276,8 @@ ctest --test-dir /tmp/smd-geo-exp-01-parser --output-on-failure
 
 | Milestone | Task branch | PR | Tested SHA/platform | Evidence | Decision / status |
 | --- | --- | --- | --- | --- | --- |
-| GEO-EXP-01 | `codex/geo-exp-01-json-brep` | [#16](https://github.com/BIBimDev/smdviewer/pull/16) | `3070ef6219cb05398ba9e14c3b50ee6ca4b1fd7b` / Kubuntu 26.04 x86-64 | Headless 8/8 and parser-only 2/2 CTests | Implemented / pending review |
-| GEO-EXP-02 | — | — | — | — | Planned |
+| GEO-EXP-01 | `codex/geo-exp-01-json-brep` | [#16](https://github.com/BIBimDev/smdviewer/pull/16) | `3070ef6219cb05398ba9e14c3b50ee6ca4b1fd7b` / Kubuntu 26.04 x86-64 | Geometry-enabled 8/8 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
+| GEO-EXP-02 | — | — | — | — | Next milestone, awaiting implementation assignment |
 | GEO-EXP-03 | — | — | — | — | Planned |
 | GEO-EXP-04 | — | — | — | — | Planned |
 
@@ -349,6 +360,7 @@ This ledger is intentionally **ephemeral**. After GEO-EXP-04 and all agreed foll
 | 2026-11-23 | D01–D03 accepted; D04 revised from multiple files to **one self-contained JSON containing BREP strings**; in-tree `libgeometry` placement and `public/exports/` viewer default accepted. |
 | 2026-11-23 | Working roadmap/ledger issued. No repository or implementation modifications performed. |
 | 2026-11-23 | GEO-EXP-01 implemented and tested. PR #16 opened for review. |
+| 2026-11-25 | GEO-EXP-01 accepted after independent review. PR #16 merged as `73779deef01650c0d9d4f090f1839dc289cf4c98`. |
 
-**Current handoff status:** GEO-EXP-01 is implemented and awaits review in PR #16.
-GEO-EXP-02 requires a separate assignment.
+**Current handoff status:** GEO-EXP-01 is closed. GEO-EXP-02 is the next
+milestone and requires a separate implementation assignment.
