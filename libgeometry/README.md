@@ -8,7 +8,13 @@ downloaded by the project build. No source evidence is persisted in a new format
 
 Requirements: CMake 3.20+, a C++20 compiler, installed OCCT 8.0.1 development
 files for `TKTopAlgo`, `TKBO` and their dependencies, and Python 3.9+ for parser
-regressions. An OCCT installation built only for the GEO-01/GEO-02A toolkit
+regressions. Geometry builds also require the header-only nlohmann/json 3.11+
+CMake package for GEO-Export (Ubuntu package `nlohmann-json3-dev`). Use
+`-Dnlohmann_json_DIR=/path/to/package/cmake` for a nonstandard installation.
+The dependency is private to the geometry implementation and isn't needed for
+parser-only or WASM builds.
+
+An OCCT installation built only for the GEO-01/GEO-02A toolkit
 set is insufficient for the geometry-enabled build. See the
 [GEO-02B build instructions](../docs/GEO-02B.md#toolchains-and-reproduction)
 for adding `TKBO` and its dependencies. The default parser-only build still

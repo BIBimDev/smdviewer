@@ -29,10 +29,14 @@ foreach(toolkit TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo TKTopAlg
     endif()
 endforeach()
 
-add_library(smd-geometry STATIC src/faces.cpp src/shell.cpp src/solid.cpp src/principal_prism.cpp src/boolean_decomposition.cpp)
+find_package(nlohmann_json 3.11 CONFIG REQUIRED)
+
+add_library(smd-geometry STATIC src/faces.cpp src/shell.cpp src/solid.cpp src/principal_prism.cpp
+    src/boolean_decomposition.cpp src/export.cpp)
 target_include_directories(smd-geometry PUBLIC include)
 target_include_directories(smd-geometry SYSTEM PUBLIC "${OpenCASCADE_INCLUDE_DIR}")
 target_link_libraries(smd-geometry PUBLIC smd TKBO TKPrim TKTopAlgo TKBRep TKMath TKernel)
+target_link_libraries(smd-geometry PRIVATE nlohmann_json::nlohmann_json)
 target_compile_features(smd-geometry PUBLIC cxx_std_20)
 set_target_properties(smd-geometry PROPERTIES CXX_EXTENSIONS OFF)
 if(MSVC)
@@ -42,6 +46,10 @@ else()
 endif()
 
 if(BUILD_TESTING)
+    add_executable(smd-export-tests tests/export_tests.cpp)
+    target_link_libraries(smd-export-tests PRIVATE smd-geometry nlohmann_json::nlohmann_json)
+    add_test(NAME geometry-export COMMAND smd-export-tests)
+
     add_executable(smd-boolean-decomposition-tests tests/boolean_decomposition_tests.cpp)
     target_link_libraries(smd-boolean-decomposition-tests PRIVATE smd-geometry)
     add_test(NAME geometry-boolean-decomposition COMMAND smd-boolean-decomposition-tests
