@@ -4,7 +4,7 @@
 >
 > Project: `smdviewer` · Repository: `BIBimDev/smdviewer`
 >
-> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 closed. GEO-EXP-02 implemented / pending independent review.**
+> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 and GEO-EXP-02 accepted and closed. GEO-EXP-03 is next.**
 >
 > Intended lifecycle: maintain across GEO-EXP-01–04, then consolidate verified results into permanent project documentation and retire this ledger.
 
@@ -245,9 +245,13 @@ ctest --test-dir /tmp/smd-geo-exp-01-parser --output-on-failure
 
 **Acceptance:** Existing upstream suites remain passing; export/import changes no source coordinates or geometry interpretation; imported solids are valid and equivalent; no new tolerance relaxation, healing or sliver filtering. Keep fixed GEO-03 Boolean/classification tolerance **`1e-7 mm`** and the additional **`1 mm³`** reconstruction-volume comparison; **any positive-volume residual fails**, regardless of size. Report results separately from source-validation responsibilities.
 
-**Status:** **Implemented / pending independent review.** [PR #18](https://github.com/BIBimDev/smdviewer/pull/18)
-targets `main` from `codex/geo-exp-02-qualification`. Implementation commit
-`f9243cdc3eddec7c6afce33029c324a8aeabd1f9`. Preflight on 2026-11-25 confirmed
+**Status:** **Accepted and closed.** Independent technical review concluded on
+2026-11-25. The implementation commit was `f9243cdc3eddec7c6afce33029c324a8aeabd1f9`,
+and the reviewed PR HEAD was `d87a31b72a031dbc46206ac083a6517fc6a86d3f`.
+The qualification branch `codex/geo-exp-02-qualification` merged into `main` as
+`631f11d8eb3947247a1dca2b42c42d9717862773`. [PR #18](https://github.com/BIBimDev/smdviewer/pull/18)
+
+Implementation preflight on 2026-11-25 confirmed
 local `main`, fetched `origin/main` and the initial task branch at the accepted
 baseline `a08ea0bee1ce9e746fd4d2220e3b483860783663`. The pre-existing untracked
 `.vscode/settings.json` and `docs/GEO-EXPORT-LEDGER.md` were preserved.
@@ -261,12 +265,14 @@ OCCT contextual validity, boundary self-interference, closed edge-connected
 shells and outward material orientation. Each test creates one JSON/BREP file
 in its own temporary directory and removes it after use.
 
-Reconstruction subtracts imported reductions from imported B, then fuses the
-imported additions. The test requires one valid connected solid and checks both
-directed material residuals and both directions of bounded-face coverage using
-deep-copied operands and fixed `1e-7 mm` OCCT Booleans. Each face is trimmed by
-the other solid's bounded faces until the topological remainder is empty.
-Volumes also agree within the established `1 mm³` reporting tolerance.
+All five qualified STRAKON specimens and the synthetic case reconstructed one
+valid connected solid using independently imported B/A/R geometry. The tests
+subtracted the reductions from B and fused the additions, then compared the
+result with imported S. Both directed material residuals were empty, and every
+bounded face was covered in both directions. Each face was trimmed by the other
+solid's bounded faces until the topological remainder was empty. The tests used
+deep-copied operands, the established `1e-7 mm` Boolean tolerance and the
+established `1 mm³` volume reporting tolerance.
 
 | Test case | Imported A / R | Residual solids S minus S′ / S′ minus S | Covered faces S / S′ | V(S′) − V(S), mm³ | Result |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -319,11 +325,10 @@ defaulted to `OFF`. The configure diagnostics, cache and build graph showed
 no OCCT or nlohmann/json discovery and no geometry or export targets. The
 parser CLI's dependency tree contained only the system runtime libraries.
 
-**Limits and review.** Windows/MSVC verification was not executed. The evidence
+**Limits.** Windows/MSVC verification was not executed. The evidence
 covers the five named specimens and the planar synthetic case under the
 established numerical policy. The test's numeric references cover planar faces
-with straight edges. The imported-body equivalence checks and Linux evidence
-are ready for independent review in PR #18.
+with straight edges.
 
 ### GEO-EXP-03 — Headless command-line export
 
@@ -355,7 +360,7 @@ are ready for independent review in PR #18.
 | Milestone | Task branch | PR | Tested SHA/platform | Evidence | Decision / status |
 | --- | --- | --- | --- | --- | --- |
 | GEO-EXP-01 | `codex/geo-exp-01-json-brep` | [#16](https://github.com/BIBimDev/smdviewer/pull/16) | `3070ef6219cb05398ba9e14c3b50ee6ca4b1fd7b` / Kubuntu 26.04 x86-64 | Geometry-enabled 8/8 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
-| GEO-EXP-02 | `codex/geo-exp-02-qualification` | [#18](https://github.com/BIBimDev/smdviewer/pull/18) | `f9243cdc3eddec7c6afce33029c324a8aeabd1f9` / Kubuntu 26.04.1 x86-64 | Focused 7/7, full geometry 15/15 and parser-only 2/2 CTests | Implemented / pending independent review |
+| GEO-EXP-02 | `codex/geo-exp-02-qualification` | [#18](https://github.com/BIBimDev/smdviewer/pull/18) | `d87a31b72a031dbc46206ac083a6517fc6a86d3f` / Kubuntu 26.04.1 x86-64 | Focused 7/7, full geometry 15/15 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
 | GEO-EXP-03 | — | — | — | — | Planned |
 | GEO-EXP-04 | — | — | — | — | Planned |
 
@@ -440,6 +445,8 @@ This ledger is intentionally **ephemeral**. After GEO-EXP-04 and all agreed foll
 | 2026-11-23 | GEO-EXP-01 implemented and tested. PR #16 opened for review. |
 | 2026-11-25 | GEO-EXP-01 accepted after independent review. PR #16 merged as `73779deef01650c0d9d4f090f1839dc289cf4c98`. |
 | 2026-11-25 | GEO-EXP-02 implemented and verified on Kubuntu. PR #18 opened for independent review. |
+| 2026-11-25 | GEO-EXP-02 accepted after independent technical review and closed. PR #18 merged as `631f11d8eb3947247a1dca2b42c42d9717862773`. |
 
-**Current handoff status:** GEO-EXP-02 is implemented and awaits independent
-technical review in PR #18.
+**Current handoff status:** GEO-EXP-02 is accepted and closed. GEO-EXP-03,
+headless command-line export, is the next planned milestone and requires a
+separate implementation assignment.
