@@ -4,7 +4,7 @@
 >
 > Project: `smdviewer` · Repository: `BIBimDev/smdviewer`
 >
-> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 and GEO-EXP-02 accepted and closed. GEO-EXP-03 implemented and pending independent review.**
+> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 through GEO-EXP-03 accepted and closed.**
 >
 > Intended lifecycle: maintain across GEO-EXP-01–04, then consolidate verified results into permanent project documentation and retire this ledger.
 
@@ -340,12 +340,30 @@ with straight edges.
 
 **Acceptance:** A supported specimen can be exported on the primary Kubuntu platform, independently reimported, and verified; failure handling is testable. No new SMD interpretation or geometry stages.
 
-**Status:** Implemented / pending independent review.
+**Status:** **Accepted and closed on 2026-11-25.**
 
-The implementation and test commit on `codex/geo-exp-03-cli` is
+The implementation and test commit on `codex/geo-exp-03-cli` was
 `a3c21e2ae959f9e45db3c36a511e00aa89952747`, from accepted `main` baseline
-`50450e8bc3f00c05f7fda4b60095ea2c825ff277`. Review is open in
-[#20](https://github.com/BIBimDev/smdviewer/pull/20).
+`50450e8bc3f00c05f7fda4b60095ea2c825ff277`. The reviewed PR HEAD was
+`83d53a038d17377314d47b8101c8151ba9eb52a3`. PR #20 merged into `main` as
+`9bc1459dee7177ee7367ddb08f1e79184272050e`. [PR #20](https://github.com/BIBimDev/smdviewer/pull/20)
+
+Independent technical review passed with no blocking findings. The review
+recorded two non-blocking observations, and acceptance stands.
+
+1. Input stream completeness could be diagnosed more explicitly.
+2. Input error messages could include the affected filename.
+
+| Verification | Result |
+| --- | --- |
+| Five STRAKON specimens | PASS |
+| Independent JSON/BREP import and reconstruction | PASS |
+| Focused CLI CTests | 6/6 |
+| Complete headless geometry suite | 21/21 |
+| Parser-only CTests | 2/2 |
+| Automated negative cases | 9 passed |
+| Additional permission checks | Passed |
+| Windows/MSVC | Not executed |
 
 Run `smd-geo-export input.smd output.json` with two explicit relative or absolute
 paths. The executable is in the build directory's `libgeometry/` (plus the
@@ -415,7 +433,7 @@ ctest --test-dir /tmp/smd-geo-exp-03-parser --output-on-failure
 Both Release builds passed. Focused CLI CTest passed **6/6**, full geometry
 CTest passed **21/21**, and default parser-only CTest passed **2/2**. The
 CLI fixtures qualify the five specimens under the existing numerical policy.
-Independent review covers CLI behavior, failure diagnostics and the reuse of
+Independent review covered CLI behavior, failure diagnostics and the reuse of
 GEO-EXP-02 verification checks.
 
 ### GEO-EXP-04 — Optional GEO-Visualiser integration
@@ -437,7 +455,7 @@ GEO-EXP-02 verification checks.
 | --- | --- | --- | --- | --- | --- |
 | GEO-EXP-01 | `codex/geo-exp-01-json-brep` | [#16](https://github.com/BIBimDev/smdviewer/pull/16) | `3070ef6219cb05398ba9e14c3b50ee6ca4b1fd7b` / Kubuntu 26.04 x86-64 | Geometry-enabled 8/8 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
 | GEO-EXP-02 | `codex/geo-exp-02-qualification` | [#18](https://github.com/BIBimDev/smdviewer/pull/18) | `d87a31b72a031dbc46206ac083a6517fc6a86d3f` / Kubuntu 26.04.1 x86-64 | Focused 7/7, full geometry 15/15 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
-| GEO-EXP-03 | `codex/geo-exp-03-cli` | [#20](https://github.com/BIBimDev/smdviewer/pull/20) | `a3c21e2ae959f9e45db3c36a511e00aa89952747` / Kubuntu 26.04.1 x86-64 | Focused CLI 6/6, full geometry 21/21 and parser-only 2/2 CTests | Implemented / pending independent review |
+| GEO-EXP-03 | `codex/geo-exp-03-cli` | [#20](https://github.com/BIBimDev/smdviewer/pull/20) | `83d53a038d17377314d47b8101c8151ba9eb52a3` / Kubuntu 26.04.1 x86-64 | Focused CLI 6/6, full geometry 21/21 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
 | GEO-EXP-04 | — | — | — | — | Planned |
 
 ## 5. Verification policy and known constraints
@@ -523,6 +541,7 @@ This ledger is intentionally **ephemeral**. After GEO-EXP-04 and all agreed foll
 | 2026-11-25 | GEO-EXP-02 implemented and verified on Kubuntu. PR #18 opened for independent review. |
 | 2026-11-25 | GEO-EXP-02 accepted after independent technical review and closed. PR #18 merged as `631f11d8eb3947247a1dca2b42c42d9717862773`. |
 | 2026-11-25 | GEO-EXP-03 implemented and verified on Kubuntu. PR #20 opened for independent review. |
+| 2026-11-25 | GEO-EXP-03 accepted and closed after independent technical review. PR #20 merged as `9bc1459dee7177ee7367ddb08f1e79184272050e`. |
 
-**Current handoff status:** GEO-EXP-03 is implemented and pending independent
-review. GEO-EXP-04 remains planned and requires a separate assignment.
+**Current handoff status:** GEO-EXP-03 is accepted and closed. GEO-EXP-04
+remains planned and requires a separate assignment.
