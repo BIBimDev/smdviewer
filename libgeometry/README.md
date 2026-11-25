@@ -77,20 +77,11 @@ time; an executable's RUNPATH alone does not locate all transitive dependencies.
 
 ## Headless SMD export
 
-The geometry-enabled build provides `smd-geo-export` under the build directory's
-`libgeometry/` (with the configuration subdirectory on multi-config generators).
-It runs with `SMD_BUILD_GEO_VISUALISER=OFF` and accepts two paths:
-
-```sh
-/tmp/smd-geo01b-build/libgeometry/smd-geo-export \
-  public/samples/Columns/COL_PLAIN.smd /tmp/COL_PLAIN.json
-```
-
-The output is one GEO-Export JSON/BREP file containing the validated solid `S`,
-principal prism `B`, extensions `A`, and reductions `R` in source-local
-millimetres. Read it with `smd_geometry::importBrep()`. Supply a new output
-filename in an existing directory. Failures return a nonzero exit status and
-write the diagnostic to standard error.
+With geometry enabled, `smd-geo-export input.smd output.json` writes the
+validated S/B/A/R bodies to one JSON/BREP file. The CLI runs with
+`SMD_BUILD_GEO_VISUALISER=OFF`. The permanent reference documents the
+interchange schema, native API, CLI usage and verification evidence.
+[GEO-Export reference](../docs/GEO-EXPORT.md)
 
 ## API, coordinates and correspondence
 

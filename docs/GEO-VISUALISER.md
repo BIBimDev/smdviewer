@@ -113,6 +113,9 @@ workspace intact and writes no export. On success, the viewer shows the full
 destination path. On failure, it shows that path and the diagnostic while
 preserving the active document and view.
 
+The permanent GEO-Export reference covers the file format, independent
+verification and the operator smoke test. [GEO-Export reference](GEO-EXPORT.md)
+
 ## Evidence and display architecture
 
 The loader calls `parseSmd10125`, `convertFaces`, `assembleShell`, `buildSolid`,
