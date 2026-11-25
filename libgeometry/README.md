@@ -75,6 +75,23 @@ its transitive libraries: set `LD_LIBRARY_PATH` as above (use `lib64` if applica
 or configure your system loader. CMake imported targets locate libraries at link
 time; an executable's RUNPATH alone does not locate all transitive dependencies.
 
+## Headless SMD export
+
+The geometry-enabled build provides `smd-geo-export` under the build directory's
+`libgeometry/` (with the configuration subdirectory on multi-config generators).
+It runs with `SMD_BUILD_GEO_VISUALISER=OFF` and accepts two paths:
+
+```sh
+/tmp/smd-geo01b-build/libgeometry/smd-geo-export \
+  public/samples/Columns/COL_PLAIN.smd /tmp/COL_PLAIN.json
+```
+
+The output is one GEO-Export JSON/BREP file containing the validated solid `S`,
+principal prism `B`, extensions `A`, and reductions `R` in source-local
+millimetres. Read it with `smd_geometry::importBrep()`. Supply a new output
+filename in an existing directory. Failures return a nonzero exit status and
+write the diagnostic to standard error.
+
 ## API, coordinates and correspondence
 
 ```cpp

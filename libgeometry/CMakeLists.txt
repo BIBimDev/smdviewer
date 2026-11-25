@@ -45,7 +45,14 @@ else()
     target_compile_options(smd-geometry PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=off)
 endif()
 
+add_executable(smd-geo-export tools/smd_geo_export.cpp)
+target_link_libraries(smd-geo-export PRIVATE smd-geometry)
+set_target_properties(smd-geo-export PROPERTIES CXX_EXTENSIONS OFF)
+
 if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(smd_geo_export_cli_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/export_cli.py")
+
     add_executable(smd-export-tests tests/export_tests.cpp)
     target_link_libraries(smd-export-tests PRIVATE smd-geometry nlohmann_json::nlohmann_json)
     add_test(NAME geometry-export COMMAND smd-export-tests)
@@ -54,8 +61,12 @@ if(BUILD_TESTING)
     target_link_libraries(smd-export-qualification-tests PRIVATE smd-geometry)
     set_target_properties(smd-export-qualification-tests PROPERTIES CXX_EXTENSIONS OFF)
     function(add_export_fixture_test name filename additions reductions)
+        set(fixture "${PROJECT_SOURCE_DIR}/public/samples/Columns/${filename}")
         add_test(NAME geometry-export-qualification-${name} COMMAND smd-export-qualification-tests
-            "${PROJECT_SOURCE_DIR}/public/samples/Columns/${filename}" ${additions} ${reductions})
+            "${fixture}" ${additions} ${reductions})
+        add_test(NAME geometry-export-cli-${name} COMMAND "${Python3_EXECUTABLE}" "${smd_geo_export_cli_test}"
+            "$<TARGET_FILE:smd-geo-export>" "${fixture}"
+            "$<TARGET_FILE:smd-export-qualification-tests>" ${additions} ${reductions})
     endfunction()
     add_export_fixture_test(plain COL_PLAIN.smd 0 0)
     add_export_fixture_test(pocket COL_SINGLE-POCKET.smd 0 1)
@@ -65,6 +76,8 @@ if(BUILD_TESTING)
     add_test(NAME geometry-export-qualification-synthetic COMMAND smd-export-qualification-tests synthetic)
     add_test(NAME geometry-export-qualification-negative-controls
         COMMAND smd-export-qualification-tests negative-controls)
+    add_test(NAME geometry-export-cli-failures COMMAND "${Python3_EXECUTABLE}" "${smd_geo_export_cli_test}"
+        "$<TARGET_FILE:smd-geo-export>" "${PROJECT_SOURCE_DIR}/public/samples/Columns/COL_PLAIN.smd")
 
     add_executable(smd-boolean-decomposition-tests tests/boolean_decomposition_tests.cpp)
     target_link_libraries(smd-boolean-decomposition-tests PRIVATE smd-geometry)

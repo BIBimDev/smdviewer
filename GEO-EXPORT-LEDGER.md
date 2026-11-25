@@ -4,7 +4,7 @@
 >
 > Project: `smdviewer` · Repository: `BIBimDev/smdviewer`
 >
-> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 and GEO-EXP-02 accepted and closed. GEO-EXP-03 is next.**
+> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 and GEO-EXP-02 accepted and closed. GEO-EXP-03 implemented and pending independent review.**
 >
 > Intended lifecycle: maintain across GEO-EXP-01–04, then consolidate verified results into permanent project documentation and retire this ledger.
 
@@ -340,7 +340,83 @@ with straight edges.
 
 **Acceptance:** A supported specimen can be exported on the primary Kubuntu platform, independently reimported, and verified; failure handling is testable. No new SMD interpretation or geometry stages.
 
-**Status:** Not started.
+**Status:** Implemented / pending independent review.
+
+The implementation and test commit on `codex/geo-exp-03-cli` is
+`a3c21e2ae959f9e45db3c36a511e00aa89952747`, from accepted `main` baseline
+`50450e8bc3f00c05f7fda4b60095ea2c825ff277`. Review is open in
+[#20](https://github.com/BIBimDev/smdviewer/pull/20).
+
+Run `smd-geo-export input.smd output.json` with two explicit relative or absolute
+paths. The executable is in the build directory's `libgeometry/` (plus the
+configuration subdirectory on multi-config generators). It produces one
+GEO-Export v1 JSON/BREP file in source-local millimetres. The destination must
+be new and its parent directory must exist. The supported input scope is the
+established GEO-00 through GEO-03 pipeline. See the [geometry README](libgeometry/README.md#headless-smd-export)
+for build and usage details.
+
+Each specimen produced exactly one file. A separate process imported it with
+`importBrep()`, checked each solid's OCCT validity, and matched the source-local
+bounds, bounded geometry, topology and volume against the qualified pipeline.
+Reconstruction from imported `B`, `A` and `R` had zero solid residuals in both
+directions and complete bounded-face coverage for every specimen.
+
+| STRAKON specimen | Imported A / R | Covered faces S / S′ | Result |
+| --- | ---: | ---: | --- |
+| `COL_PLAIN.smd` | 0 / 0 | 6 / 6 | Pass |
+| `COL_SINGLE-POCKET.smd` | 0 / 1 | 10 / 10 | Pass |
+| `COL_PLAIN_SINGLE-CORBEL.smd` | 1 / 0 | 10 / 12 | Pass |
+| `COL_PLAIN_HALF-CORBEL.smd` | 1 / 0 | 10 / 11 | Pass |
+| `COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd` | 1 / 1 | 14 / 15 | Pass |
+
+Nine automated negative cases passed. Zero, one, or three arguments reported
+usage. Missing and non-regular inputs, an SMD missing its geometry block, and an
+SMD with a degenerate face plane reported their stage diagnostics. An existing
+destination and a missing output directory reported exporter errors. Every
+failure returned a nonzero exit code, left the existing destination bytes
+intact, and created no unintended files. Additional Kubuntu checks passed for
+an unreadable input, a permission-denied output directory, and an export with
+two absolute paths. Exporter-level invalid-solid checks also passed in the full
+suite.
+
+Verification ran on **Kubuntu 26.04.1 LTS x86-64** (Linux `7.0.0-44-generic`)
+using **GCC 15.2.0**, C++20, CMake 4.2.3, Ninja 1.13.2, Python 3.14.4,
+shared OCCT 8.0.1, and nlohmann/json 3.11.3. CMake 3.20+, a C++20 compiler,
+OCCT 8.0.1 modeling toolkits, and the nlohmann/json 3.11+ CMake package are
+required for the geometry-enabled build. Python is used for native tests.
+The headless build and tests passed with the visualiser disabled and the
+display variables unset for CTest. `ldd` showed only OCCT modeling and base
+runtime libraries. The default parser-only build skipped discovery of OCCT,
+nlohmann/json and Qt and had no `smd-geo-export` target. Windows/MSVC testing
+was not executed.
+
+Executed verification commands from the repository root:
+
+```sh
+cmake -S . -B /tmp/smd-geo-exp-03-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DSMD_BUILD_GEOMETRY=ON -DSMD_BUILD_GEO_VISUALISER=OFF \
+  -DOpenCASCADE_DIR="$HOME/.local/opt/occt-8.0.1-visual/lib/cmake/opencascade" \
+  -Dnlohmann_json_DIR=/tmp/smd-geo-exp-01-deps/usr/share/cmake/nlohmann_json
+cmake --build /tmp/smd-geo-exp-03-build --parallel 4
+export LD_LIBRARY_PATH="$HOME/.local/opt/occt-8.0.1-visual/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir /tmp/smd-geo-exp-03-build \
+  --output-on-failure -V -R '^geometry-export-cli-'
+env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir /tmp/smd-geo-exp-03-build \
+  --output-on-failure --parallel 4
+ldd /tmp/smd-geo-exp-03-build/libgeometry/smd-geo-export
+
+env -u CMAKE_PREFIX_PATH -u OpenCASCADE_DIR -u nlohmann_json_DIR -u CMAKE_TOOLCHAIN_FILE \
+  cmake -S . -B /tmp/smd-geo-exp-03-parser -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  --debug-find-pkg=OpenCASCADE,nlohmann_json,Qt6
+cmake --build /tmp/smd-geo-exp-03-parser --parallel 3
+ctest --test-dir /tmp/smd-geo-exp-03-parser --output-on-failure
+```
+
+Both Release builds passed. Focused CLI CTest passed **6/6**, full geometry
+CTest passed **21/21**, and default parser-only CTest passed **2/2**. The
+CLI fixtures qualify the five specimens under the existing numerical policy.
+Independent review covers CLI behavior, failure diagnostics and the reuse of
+GEO-EXP-02 verification checks.
 
 ### GEO-EXP-04 — Optional GEO-Visualiser integration
 
@@ -361,7 +437,7 @@ with straight edges.
 | --- | --- | --- | --- | --- | --- |
 | GEO-EXP-01 | `codex/geo-exp-01-json-brep` | [#16](https://github.com/BIBimDev/smdviewer/pull/16) | `3070ef6219cb05398ba9e14c3b50ee6ca4b1fd7b` / Kubuntu 26.04 x86-64 | Geometry-enabled 8/8 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
 | GEO-EXP-02 | `codex/geo-exp-02-qualification` | [#18](https://github.com/BIBimDev/smdviewer/pull/18) | `d87a31b72a031dbc46206ac083a6517fc6a86d3f` / Kubuntu 26.04.1 x86-64 | Focused 7/7, full geometry 15/15 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
-| GEO-EXP-03 | — | — | — | — | Planned |
+| GEO-EXP-03 | `codex/geo-exp-03-cli` | [#20](https://github.com/BIBimDev/smdviewer/pull/20) | `a3c21e2ae959f9e45db3c36a511e00aa89952747` / Kubuntu 26.04.1 x86-64 | Focused CLI 6/6, full geometry 21/21 and parser-only 2/2 CTests | Implemented / pending independent review |
 | GEO-EXP-04 | — | — | — | — | Planned |
 
 ## 5. Verification policy and known constraints
@@ -381,7 +457,7 @@ with straight edges.
 2. **Overwrite/error semantics:** keep simple and explicit. In particular, avoid silent destruction of an existing export; select and test precise behavior in GEO-EXP-01, without introducing a broad filesystem transaction framework.
 3. **Failure and parse limits:** decide reasonable error handling for malformed/oversized input in GEO-EXP-01. Do not reinterpret BREP internals.
 4. **Public export directory:** `/public/exports/` is currently **not** ignored in `.gitignore`, and Vite commonly copies `public/` into the web distribution. Ignoring it in Git alone does **not** prevent publication. At GEO-EXP-04, verify and address both risks without broad unrelated housekeeping; treat industrial geometry as potentially confidential.
-5. **Naming of exported JSON documents:** use a predictable source-stem-based default in viewer/CLI adapters while allowing the library to accept an explicit path. Final naming can be decided with the corresponding milestone.
+5. **Naming of exported JSON documents.** GEO-EXP-03 requires an explicit output path. The viewer's default filename remains a GEO-EXP-04 choice.
 
 ## 6. Handoff protocol for each successor session
 
@@ -446,7 +522,7 @@ This ledger is intentionally **ephemeral**. After GEO-EXP-04 and all agreed foll
 | 2026-11-25 | GEO-EXP-01 accepted after independent review. PR #16 merged as `73779deef01650c0d9d4f090f1839dc289cf4c98`. |
 | 2026-11-25 | GEO-EXP-02 implemented and verified on Kubuntu. PR #18 opened for independent review. |
 | 2026-11-25 | GEO-EXP-02 accepted after independent technical review and closed. PR #18 merged as `631f11d8eb3947247a1dca2b42c42d9717862773`. |
+| 2026-11-25 | GEO-EXP-03 implemented and verified on Kubuntu. PR #20 opened for independent review. |
 
-**Current handoff status:** GEO-EXP-02 is accepted and closed. GEO-EXP-03,
-headless command-line export, is the next planned milestone and requires a
-separate implementation assignment.
+**Current handoff status:** GEO-EXP-03 is implemented and pending independent
+review. GEO-EXP-04 remains planned and requires a separate assignment.
