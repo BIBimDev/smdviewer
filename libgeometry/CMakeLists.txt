@@ -50,6 +50,22 @@ if(BUILD_TESTING)
     target_link_libraries(smd-export-tests PRIVATE smd-geometry nlohmann_json::nlohmann_json)
     add_test(NAME geometry-export COMMAND smd-export-tests)
 
+    add_executable(smd-export-qualification-tests tests/export_qualification_tests.cpp)
+    target_link_libraries(smd-export-qualification-tests PRIVATE smd-geometry)
+    set_target_properties(smd-export-qualification-tests PROPERTIES CXX_EXTENSIONS OFF)
+    function(add_export_fixture_test name filename additions reductions)
+        add_test(NAME geometry-export-qualification-${name} COMMAND smd-export-qualification-tests
+            "${PROJECT_SOURCE_DIR}/public/samples/Columns/${filename}" ${additions} ${reductions})
+    endfunction()
+    add_export_fixture_test(plain COL_PLAIN.smd 0 0)
+    add_export_fixture_test(pocket COL_SINGLE-POCKET.smd 0 1)
+    add_export_fixture_test(corbel COL_PLAIN_SINGLE-CORBEL.smd 1 0)
+    add_export_fixture_test(half-corbel COL_PLAIN_HALF-CORBEL.smd 1 0)
+    add_export_fixture_test(combined COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd 1 1)
+    add_test(NAME geometry-export-qualification-synthetic COMMAND smd-export-qualification-tests synthetic)
+    add_test(NAME geometry-export-qualification-negative-controls
+        COMMAND smd-export-qualification-tests negative-controls)
+
     add_executable(smd-boolean-decomposition-tests tests/boolean_decomposition_tests.cpp)
     target_link_libraries(smd-boolean-decomposition-tests PRIVATE smd-geometry)
     add_test(NAME geometry-boolean-decomposition COMMAND smd-boolean-decomposition-tests

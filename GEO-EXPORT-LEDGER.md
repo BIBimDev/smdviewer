@@ -4,7 +4,7 @@
 >
 > Project: `smdviewer` · Repository: `BIBimDev/smdviewer`
 >
-> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 accepted and closed on 2026-11-25.**
+> Established: **2026-11-23** · Status: **Architecture accepted. GEO-EXP-01 closed. GEO-EXP-02 implemented / pending independent review.**
 >
 > Intended lifecycle: maintain across GEO-EXP-01–04, then consolidate verified results into permanent project documentation and retire this ledger.
 
@@ -245,7 +245,85 @@ ctest --test-dir /tmp/smd-geo-exp-01-parser --output-on-failure
 
 **Acceptance:** Existing upstream suites remain passing; export/import changes no source coordinates or geometry interpretation; imported solids are valid and equivalent; no new tolerance relaxation, healing or sliver filtering. Keep fixed GEO-03 Boolean/classification tolerance **`1e-7 mm`** and the additional **`1 mm³`** reconstruction-volume comparison; **any positive-volume residual fails**, regardless of size. Report results separately from source-validation responsibilities.
 
-**Status:** Not started.
+**Status:** **Implemented / pending independent review.** [PR #18](https://github.com/BIBimDev/smdviewer/pull/18)
+targets `main` from `codex/geo-exp-02-qualification`. Implementation commit
+`f9243cdc3eddec7c6afce33029c324a8aeabd1f9`. Preflight on 2026-11-25 confirmed
+local `main`, fetched `origin/main` and the initial task branch at the accepted
+baseline `a08ea0bee1ce9e746fd4d2220e3b483860783663`. The pre-existing untracked
+`.vscode/settings.json` and `docs/GEO-EXPORT-LEDGER.md` were preserved.
+
+`libgeometry/tests/export_qualification_tests.cpp` and `libgeometry/CMakeLists.txt`
+add seven headless CTests. The fixture pipeline retains only numeric body
+references after export. Import compares every S/B/A/R body with its reference
+for positive finite volume, source-local bounds, per-shell topology and bounded
+polygon loops with cyclic starts and independent face traversal order. It checks
+OCCT contextual validity, boundary self-interference, closed edge-connected
+shells and outward material orientation. Each test creates one JSON/BREP file
+in its own temporary directory and removes it after use.
+
+Reconstruction subtracts imported reductions from imported B, then fuses the
+imported additions. The test requires one valid connected solid and checks both
+directed material residuals and both directions of bounded-face coverage using
+deep-copied operands and fixed `1e-7 mm` OCCT Booleans. Each face is trimmed by
+the other solid's bounded faces until the topological remainder is empty.
+Volumes also agree within the established `1 mm³` reporting tolerance.
+
+| Test case | Imported A / R | Residual solids S minus S′ / S′ minus S | Covered faces S / S′ | V(S′) − V(S), mm³ | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `COL_PLAIN.smd` | 0 / 0 | 0 / 0 | 6 / 6 | 0 | Pass |
+| `COL_SINGLE-POCKET.smd` | 0 / 1 | 0 / 0 | 10 / 10 | 0 | Pass |
+| `COL_PLAIN_SINGLE-CORBEL.smd` | 1 / 0 | 0 / 0 | 10 / 12 | 0 | Pass |
+| `COL_PLAIN_HALF-CORBEL.smd` | 1 / 0 | 0 / 0 | 10 / 11 | 0 | Pass |
+| `COL_SINGLE-POCKET_SINGLE-CORBEL_02.smd` | 1 / 1 | 0 / 0 | 14 / 15 | 0 | Pass |
+| Synthetic independent additions and reductions | 2 / 2 | 0 / 0 | 25 / 29 | −9.09 × 10⁻¹³ | Pass |
+
+The synthetic S comes from an extruded polygonal footprint with an open notch
+and an internal cavity. Analytic volumes in mm³ are B `4000`, A `60, 120`,
+R `18, 24`, and S `4138`. The negative controls rejected a missing addition,
+a missing reduction and two equal-volume X displacements. The `1 mm` shift
+left `50 mm³` in each direction, and the `0.001 mm` shift left `0.05 mm³` in
+each direction.
+
+**Build and verification.** Kubuntu 26.04.1 x86-64, GCC 15.2.0, C++20,
+CMake 4.2.3, Ninja 1.13.2, Python 3.14.4, pinned OCCT 8.0.1 Release shared
+with TBB off, and nlohmann/json 3.11.3. From the repository root:
+
+```sh
+taskOcct=/home/dhu/.local/opt/occt-8.0.1-visual
+taskJson=/tmp/smd-geo-exp-01-deps/usr/share/cmake/nlohmann_json
+cmake -S . -B /tmp/smd-geo-exp-02-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DSMD_BUILD_GEOMETRY=ON -DSMD_BUILD_GEO_VISUALISER=OFF \
+  -DOpenCASCADE_DIR="$taskOcct/lib/cmake/opencascade" -Dnlohmann_json_DIR="$taskJson"
+cmake --build /tmp/smd-geo-exp-02-build --parallel 6
+LD_LIBRARY_PATH="$taskOcct/lib" ctest --test-dir /tmp/smd-geo-exp-02-build \
+  -R '^geometry-export-qualification-' --verbose
+LD_LIBRARY_PATH="$taskOcct/lib" ctest --test-dir /tmp/smd-geo-exp-02-build --output-on-failure
+LD_LIBRARY_PATH="$taskOcct/lib" ldd /tmp/smd-geo-exp-02-build/libgeometry/smd-export-qualification-tests
+
+env -u CMAKE_PREFIX_PATH -u OpenCASCADE_DIR -u nlohmann_json_DIR -u CMAKE_TOOLCHAIN_FILE \
+  cmake -S . -B /tmp/smd-geo-exp-02-parser -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  --debug-find-pkg=OpenCASCADE,nlohmann_json
+cmake --build /tmp/smd-geo-exp-02-parser --parallel 6
+ctest --test-dir /tmp/smd-geo-exp-02-parser --output-on-failure
+rg '^SMD_BUILD_(GEOMETRY|GEO_VISUALISER):' /tmp/smd-geo-exp-02-parser/CMakeCache.txt
+! rg -i 'OpenCASCADE|nlohmann_json|smd-geometry|smd-export' \
+  /tmp/smd-geo-exp-02-parser/CMakeCache.txt /tmp/smd-geo-exp-02-parser/build.ninja
+ldd /tmp/smd-geo-exp-02-parser/libsmd/smd-extract
+git diff --check
+```
+
+The headless geometry build passed **7/7 focused** and **15/15 full** CTests.
+Its qualification executable's dependency tree contained neither Qt nor
+OpenGL. The parser-only build passed **2/2 CTests**. Both geometry options
+defaulted to `OFF`. The configure diagnostics, cache and build graph showed
+no OCCT or nlohmann/json discovery and no geometry or export targets. The
+parser CLI's dependency tree contained only the system runtime libraries.
+
+**Limits and review.** Windows/MSVC verification was not executed. The evidence
+covers the five named specimens and the planar synthetic case under the
+established numerical policy. The test's numeric references cover planar faces
+with straight edges. The imported-body equivalence checks and Linux evidence
+are ready for independent review in PR #18.
 
 ### GEO-EXP-03 — Headless command-line export
 
@@ -277,7 +355,7 @@ ctest --test-dir /tmp/smd-geo-exp-01-parser --output-on-failure
 | Milestone | Task branch | PR | Tested SHA/platform | Evidence | Decision / status |
 | --- | --- | --- | --- | --- | --- |
 | GEO-EXP-01 | `codex/geo-exp-01-json-brep` | [#16](https://github.com/BIBimDev/smdviewer/pull/16) | `3070ef6219cb05398ba9e14c3b50ee6ca4b1fd7b` / Kubuntu 26.04 x86-64 | Geometry-enabled 8/8 and parser-only 2/2 CTests | Accepted and closed 2026-11-25 |
-| GEO-EXP-02 | — | — | — | — | Next milestone, awaiting implementation assignment |
+| GEO-EXP-02 | `codex/geo-exp-02-qualification` | [#18](https://github.com/BIBimDev/smdviewer/pull/18) | `f9243cdc3eddec7c6afce33029c324a8aeabd1f9` / Kubuntu 26.04.1 x86-64 | Focused 7/7, full geometry 15/15 and parser-only 2/2 CTests | Implemented / pending independent review |
 | GEO-EXP-03 | — | — | — | — | Planned |
 | GEO-EXP-04 | — | — | — | — | Planned |
 
@@ -361,6 +439,7 @@ This ledger is intentionally **ephemeral**. After GEO-EXP-04 and all agreed foll
 | 2026-11-23 | Working roadmap/ledger issued. No repository or implementation modifications performed. |
 | 2026-11-23 | GEO-EXP-01 implemented and tested. PR #16 opened for review. |
 | 2026-11-25 | GEO-EXP-01 accepted after independent review. PR #16 merged as `73779deef01650c0d9d4f090f1839dc289cf4c98`. |
+| 2026-11-25 | GEO-EXP-02 implemented and verified on Kubuntu. PR #18 opened for independent review. |
 
-**Current handoff status:** GEO-EXP-01 is closed. GEO-EXP-02 is the next
-milestone and requires a separate implementation assignment.
+**Current handoff status:** GEO-EXP-02 is implemented and awaits independent
+technical review in PR #18.
