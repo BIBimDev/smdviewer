@@ -1,164 +1,179 @@
 # AGENTS.md — BIBimDev/smdviewer
 
-## Purpose and scope
+## 1. Purpose and governance
 
-This repository contains an experimental STRAKON/DICAD `.smd` reader, a browser-based geometry inspector and the opt-in native GEO-Visualiser. The longer-term goal is an independent system for geometric data extraction, parametric interpretation, reinforcement, design, and workshop-drawing generation for precast concrete elements.
+Develop an independent, predominantly headless engineering system for precast concrete elements: STRAKON/DICAD geometry extraction, geometric processing, parametric interpretation, BIM exchange, reinforcement, structural design and workshop-drawing generation.
 
-**The viewers are research and diagnostic tools, not the future engineering system of record.** These instructions govern the repository root and its subdirectories unless a more specific `AGENTS.md` is introduced deliberately.
+The browser viewer and native GEO-Visualiser are research and inspection tools, not the engineering system of record. These instructions govern the repository and its subdirectories unless superseded by a deliberately introduced, more specific `AGENTS.md`.
 
-## Non-negotiable working principles
+Authoritative repository: `BIBimDev/smdviewer`; integration branch: `main`.
 
-1. **Inspect the actual baseline.** Before proposing or making a code change, identify the current branch, commit SHA, working-tree status, relevant files, and applicable instructions. Fetch/check the remote when currency matters. Do not treat a dated report as proof of today's state.
-2. **Require an agreed task.** Discuss requirements and acceptance criteria first. Do not modify source, create commits, push, merge, or rebase without explicit authorization for the specific task. Prefer small, independently testable milestones.
-3. **Protect team work.** Never discard uncommitted changes. Work on a task branch, not directly on `main`; submit a reviewable pull request. Do not force-push or alter another contributor's branch without approval. Never merge on behalf of the team without authorization.
-4. **Separate evidence from hypotheses.** The `.smd` format has been reverse-engineered from a limited set of specimens, not from an authoritative DICAD specification. Mark behavior as *sample-verified*, *inferred*, *proposed*, or *unknown*. Reject unsupported input explicitly; do not invent semantics.
-5. **Preserve geometric evidence.** Treat the source B-rep as authoritative. Preserve original vertex coordinates and order, ordered face loops, face flags/names, plane equations, block tags, source identities, and any detected transformations. Parametric profiles, extrusions, pockets, and Boolean histories are **derived interpretations**, never replacements for the source B-rep.
-6. **Keep coordinate systems explicit.** Distinguish raw B-rep coordinates, coordinates after a recorded B-rep transform, element placement, and project/global placement. Do not assume that the existing TypeScript property `verticesWorld` necessarily means project-global coordinates. Define units and numerical tolerances for each operation.
-7. **Maintain module boundaries.** Keep parser and geometric processing independent from Three.js, DOM, and browser UI. The viewer must remain functional until a replacement or integration is independently approved.
-8. **Test before claiming success.** Run focused tests and relevant builds; report the commands and results. Never claim an unexecuted Windows/Linux test passed. Check failures and malformed input as well as successful specimens.
-9. **Respect confidentiality.** Do not publish proprietary `.kon` files, drawings, credentials, internal project information, or additional specimens without explicit permission to share them in the repository.
+### Working principles
 
-## Repository snapshot — verified 20261113
+1. **Inspect the actual baseline.** Before proposing or making code changes, inspect the applicable instructions, relevant source, current branch, commit SHA and working-tree status. Fetch/check the remote when currency matters. A dated report is not proof of the current state.
+2. **Require an agreed task.** Discuss requirements and acceptance criteria before implementation. Use small, independently testable milestones. No source changes, commits, pushes, merges or rebases without explicit authorization for the specific task.
+3. **Protect team work.** Preserve existing changes. Work on a task branch and submit a reviewable pull request. Never force-push, alter another contributor's branch or merge without authorization.
+4. **Separate evidence from interpretation.** The SMD format is reverse-engineered from limited specimens, not an authoritative DICAD specification. Distinguish established requirements, sample-verified findings, inferences, proposals and unknowns. Reject unsupported inputs explicitly; do not invent semantics.
+5. **Preserve source evidence.** Original SMD B-rep geometry is authoritative. Retain vertex coordinates and order, ordered face loops, flags, names, plane equations, block tags, source identities and recorded transformations. Derived geometry, feature interpretations and parameterizations never replace that evidence.
+6. **Keep coordinate systems explicit.** Distinguish raw source-local geometry, recorded B-rep transformations, element placement and project/global placement. Do not infer project-global semantics from `verticesWorld` or silently compose transformations. Specify units, tolerances and numerical policies.
+7. **Maintain module boundaries.** Prefer native C++20 for engineering components. Keep processing independent of STRAKON at downstream interfaces, IFC, Qt, OpenGL, Three.js, DOM and viewer state where these are not essential to the component's purpose. Preserve accepted interfaces and both viewers unless separately authorized to change them.
+8. **Test before claiming success.** Run focused tests and relevant regression builds; report exact commands and outcomes. Include malformed input and negative controls. Never claim unexecuted platform, application or operator verification.
+9. **Respect confidentiality.** Do not publish proprietary `.kon` files, drawings, credentials, internal project information or additional specimens without permission. Generated engineering exports belong outside the public browser asset tree; do not submit confidential geometry to external validation services without authorization.
 
-- Repository: `BIBimDev/smdviewer`; default branch: `main`; verified HEAD `23c0aeb4acc08e66464ebf3f0a1bc649ce50db3f`.
-- GEO-00 and integrations GEO-00-INT01/INT02 are accepted: `libsmd/` implements the authoritative C++20 SMD parser; its sources are also compiled to WebAssembly for browser parsing. The original TypeScript parser under `src/smd/` remains a regression oracle, not the production SMD parser.
-- `libsmd/include/smd/types.hpp` defines the native parsed data structures. `libsmd/src/brep_detector.cpp` extracts ordered vertices, single-loop polygon faces, source plane equations, names and optional transform.
-- JSON v1 is a diagnostic/viewer interchange format, **not** a lossless source archive or GEO-01 persistence contract.
-- `src/viewer/` and `src/main.ts` implement presentation/interaction; the browser viewer remains functional pending any separately authorized replacement.
-- `public/samples/plain_column.smd` and `public/samples/pocket_column.smd` are the two accepted GEO-00 geometry regression fixtures. A subsequent commit introduced `SingleCorbelColumn.smd`, `SingleHalfCorbelColumn.smd`, and `SinglePocketingSingleCorbelColumn.smd`; their presence alone does not establish new parser or geometry acceptance.
-- `docs/SMD_V1_STRUCTURE.md`, `docs/GEO-00-INT01.md`, `docs/GEO-00-INT02.md`, and `libsmd/README.md` document current accepted scope and limitations.
-- Experimental multi-block/subject-selection heuristics are not established general STRAKON/DICAD rules.
+## 2. Accepted baseline and architectural contracts
 
-**This section is a dated snapshot. Reinspect the repository at the start of every implementation task.**
+Reference baseline verified on 20261126: `main` at `162638f2da8525da8e5caacdfb92d624f97d95ba`, three sample-only commits beyond the GEO-Export closure at `49a424cd82b2acd3f21a9a3f32abac38a4cba2b7`. This is a historical reference, not a substitute for checking the current repository and working tree.
 
-## Baseline geometry fixtures and limitations
+The following milestones are accepted and closed. Historical implementation details, test results and limitations reside in their referenced documents and Git history, not in this governance file.
 
-| Specimen | B-rep vertices | Faces | Bounding dimensions |
-| --- | ---: | ---: | --- |
-| `plain_column.smd` | 8 | 6 | 750 × 650 × 6000 mm |
-| `pocket_column.smd` | 16 | 10 | 750 × 650 × 6000 mm |
+| Milestone | Accepted scope | Reference |
+| --- | --- | --- |
+| GEO-00 | Native C++20 SMD parser, native JSON bridge and WASM integration | [libsmd/README.md](libsmd/README.md), [INT01](docs/GEO-00-INT01.md), [INT02](docs/GEO-00-INT02.md) |
+| GEO-01 | Validated planar OCCT faces with source correspondence | [GEO-01B](docs/GEO-01B.md), [GEO-01C](docs/GEO-01C.md) |
+| GEO-02 | Closed shell and validated connected physical solid | [GEO-02B](docs/GEO-02B.md), [GEO-02C](docs/GEO-02C.md) |
+| GEO-03 | Principal prism, Boolean differences and qualified reconstruction | [GEO-03A](docs/GEO-03A.md), [GEO-03B](docs/GEO-03B.md), [GEO-03C](docs/GEO-03C.md) |
+| GEO-Visualiser | Optional native read-only geometry inspector | [GEO-VISUALISER.md](docs/GEO-VISUALISER.md) |
+| GEO-Export | Native JSON/BREP persistence, headless CLI and viewer export | [GEO-EXPORT.md](docs/GEO-EXPORT.md) |
 
-For both specimens, rendered-coordinate bounds are X `-375..375`, Y `-325..325`, Z `-1000..5000` mm. The pocket specimen includes a rectangular recess near the top. The current browser parser primarily supports the confirmed `#10125` subset and single-loop faces; successful rendering does not prove a watertight, topologically valid solid.
+### Source and operational geometry
 
-## Engineering development sequence — accepted architectural roadmap 20261113
+- `libsmd/` is the authoritative production SMD parser, also compiled to WASM for the browser. The original TypeScript parser is a regression oracle, not a production fallback. Parser JSON v1 is diagnostic interchange, not a lossless source archive.
+- `libgeometry/` uses native OCCT topology and geometry, not a parallel half-edge model. The accepted build requires OCCT **8.0.1 exactly**. Changes to this baseline require explicit agreement and qualification.
+- The accepted initial source scope is planar polygonal faces with straight edges and one connected physical solid per supported dataset. General STRAKON input, assemblies, curved source geometry and arbitrary construction histories are not established capabilities.
+- Preserve source-to-kernel correspondence and distinguish source, derived and generated faces. OCCT traversal ordinals are not persistent source identifiers. No silent healing, snapping, topology simplification or tolerance relaxation.
+- All accepted geometry is expressed in raw source-local millimetres, with recorded STRAKON, element and project transforms unapplied. Feature-local and future project placements must be defined explicitly.
 
-The accepted staged workflow is **source B-rep → OCCT faces → valid OCCT solid → partial-body interpretation**. Target **Open CASCADE Technology (OCCT) 8.x** as the operational geometric/topological kernel. Pin the exact 8.x release and build configuration in an authorized implementation task, not by assumption.
+These provisions consolidate the enduring GEO-01-D01 through GEO-01-D10 architectural decisions; their original record remains in Git history.
 
-**GEO-00 — independent C++20 SMD parser (accepted and closed)**
+### Constructive decomposition (GEO-03)
 
-- Preserve the accepted native `libsmd` parser, command-line extractor, JSON v1 diagnostic interface, and WebAssembly integration.
-- The TypeScript parser remains a regression oracle; there is no production TypeScript parser fallback.
-- No subsequent geometry milestone implicitly authorizes changes to GEO-00 parsing semantics.
+| Symbol | Meaning |
+| --- | --- |
+| `S` | Validated complete physical element solid |
+| `B` | Derived principal constant-cross-section prism |
+| `A[]` | Individual additions |
+| `R[]` | Individual reductions |
 
-**GEO-01 — source B-rep to OCCT `TopoDS_Face` collection (planned)**
+```text
+A = S \ B
+R = B \ S
+S = (B \ R) ∪ A
 
-- Input: the accepted native `smd::ParsedSmd` / `ParsedBrep` representation, not rendered triangles or JSON v1 as a required persistence contract.
-- Construct **one OCCT `TopoDS_Face` per supported source polygonal face**, with its bounded planar surface and the necessary `TopoDS_Wire`, `TopoDS_Edge`, and `TopoDS_Vertex` objects. Preserve the original ordered loop, source face/vertex ordinals, names, flags, plane coefficients, and provenance through an explicit sidecar/correspondence mechanism.
-- Keep raw source coordinates distinct from coordinates after the recorded B-rep transform. Define and document the coordinate frame used to construct OCCT faces; do not compose unverified element or project placement transforms.
-- Use OCCT as the operational topology kernel. No independent relational half-edge implementation or prescribed face-edge hub tables.
-- Check each constructed face against source geometry with explicit tolerances; report unsupported, degenerate, or inconsistent input without overwriting or healing authoritative source evidence.
-- **Boundary:** no sewing into shells, no construction of `TopoDS_Solid`, no extrusion/feature recognition, no Boolean decomposition, and no viewer replacement. Source-evidence persistence remains a separate design decision.
-
-**GEO-02 — OCCT `TopoDS_Face` collection to `TopoDS_Solid` (planned)**
-
-- Input: the GEO-01 faces and their source-to-kernel correspondence.
-- Establish shared edge incidences, consistent orientations, and a closed shell using appropriate OCCT topology/sewing tools; construct and validate one connected `TopoDS_Solid`.
-- Confirm that the supported boundary is planar-faced, closed, orientable, non-self-intersecting, and volumetrically valid under an explicitly stated tolerance policy. A successful SMD parse or successful face conversion is not proof of a valid solid.
-- Track and report sewing/healing/splitting changes independently of the source evidence. Reject or diagnose conversion failures without silently modifying source vertices, loops, planes, flags, or names.
-- **Boundary:** no identification of main extrusion, corbels, pockets, cut-outs, or general Boolean reconstruction.
-
-**GEO-03 — OCCT `TopoDS_Solid` to principal extrusion and partial bodies (planned)**
-
-- Input: one validated GEO-02 solid `S`.
-- Use precast-mould domain knowledge, geometric evidence, source profile metadata, and—where meaningful—element designation to identify a **main constant-cross-section extrusion** `B`; do not presume a unique interpretation where evidence is insufficient.
-- Classify Boolean differences as **extensions** `A = S \ B` (mathematical set difference) and **reductions** `R = B \ S`; evaluate using OCCT Boolean operations and identify connected components as candidate corbels, pockets, cut-outs, or unclassified features.
-- Keep original source faces distinct from OCCT-generated/split/removed faces. Record derived correspondences when established; OCCT face traversal indices are not durable source identifiers.
-- Verify that `(B \ R) ∪ A` reproduces `S` geometrically within defined tolerances; compare shape/volume/boundary, not only face counts.
-- Initial scope excludes tapered main sections, arbitrary CSG histories, and construction/manufacturing-joint inference.
-
-**Accepted architectural decisions GEO-01-D01 through GEO-01-D10**
-
-- **D01:** Distinguish authoritative SMD source geometry, OCCT geometric/topological processing, and derived constructive interpretation.
-- **D02:** One connected physical solid per supported dataset; no assemblies or independent multi-solid input in the initial scope.
-- **D03:** Closed, consistently oriented planar polygonal boundary with straight edges; validate rather than presume geometric correctness.
-- **D04:** OCCT 8.x is the preferred C++ geometry kernel for B-rep topology, modelling, operations, and validation.
-- **D05:** Use OCCT native vertices, edges, wires, faces, shells, and solids rather than implementing a separate operational half-edge topology.
-- **D06:** Original SMD B-rep evidence (coordinates/order, loops, flags, names, plane equations, transforms, source metadata) remains authoritative and independently preserved; physical persistence format undecided.
-- **D07:** Principal extrusion, extensions, and reductions are derived OCCT bodies, with source and reconstructed faces distinguishable.
-- **D08:** Source-to-OCCT conversion is explicit, reproducible, validated, and non-destructive to original evidence.
-- **D09:** Interpret the initial supported precast geometry through one principal constant-section extrusion with local extensions/reductions; tapered and general complex profiles deferred.
-- **D10:** For original solid `S` and identified main extrusion `B`, define extensions `A = S \ B` and reductions `R = B \ S` as geometric differences.
-
-**Deferred topics:** SQLite source persistence and logical schema, OCCT B-rep versus OCAF persistence, FreeCAD testing/showcasing, visualization replacement, and downstream reinforcement/design/drawing systems. Selecting OCCT does **not** itself decide the persistence format. Revisit these through separate explicit requirements and acceptance criteria.
-
-The three GEO stages are roadmap boundaries, not a single omnibus implementation authorization. Discuss focused milestones, acceptance criteria, testing, and code review before each coding assignment; use a task branch and PR. No roadmap item above authorizes modifications by itself.
-
-## Native GEO-Visualiser — development phase closed 20261118
-
-The current GEO-Visualiser is accepted as fit for its inspection purpose.
-This development phase is complete. No further feature development is planned
-for now. This does not replace the browser viewer or authorize changes to the
-parser, the geometry pipeline or source evidence.
-
-- **Accepted scope:** the opt-in Qt/OCCT 8.0.1 desktop inspector in
-  `geo-visualiser/` opens supported SMD files and inspects source entities,
-  their properties and provenance, and the validated solid `S` alongside the
-  derived principal-extrusion candidate `B`, extensions `A` and reductions
-  `R`. Geometry is read-only. Coordinates are raw source-local millimetres.
-  Session tags are transient viewer annotations, not SMD metadata.
-- **Tested source revision:**
-  `3ca99232061f96ba910732015b8765bc8a8cbcc9` on
-  `feat/geo-vis-refine-04`. This is the accepted development tip before
-  integration, not a statement of the current `main` HEAD.
-- **Kubuntu:** Release build, 9/9 CTests, `--open` and a fresh `--render`
-  under xcb passed for the final fix. The operator accepted the viewer and
-  the final stale-tag fix after manual review.
-- **Windows 11 x64, active RDP session:** MSVC Release build, 9/9 CTests,
-  `--open` and two fresh `--render` runs passed. Manual RDP acceptance
-  was not recorded. Do not infer it from the automated result.
-- **Windows on ARM64 (Surface), verified 20261118:** MSVC Release `x64`
-  build passed and the operator confirmed that the GEO-Visualiser ran
-  under x64 emulation at `88c59c5f2227eabce7ae297d88e67f30461d6ec8`.
-  The parser-only CTests passed 2/2 after restoring the exact LF bytes of
-  seven reference files converted to CRLF at checkout. OCCT reported the
-  Microsoft GDI Generic OpenGL 1.1 fallback during launch. A native ARM64
-  viewer build, hardware-accelerated rendering, and the full viewer test
-  suite were not verified on the Surface.
-- **Known and deferred:** the appearance dialog can report a failed save
-  even if preferences were written when Qt retains an earlier settings
-  error. Cancel restores the live preview but may not undo such a write.
-  Do not treat this failure path as fixed or covered by normal-save tests.
-
-For native build, launch and verification commands, see
-[docs/GEO-VISUALISER.md](docs/GEO-VISUALISER.md).
-
-## Build and repository hygiene
-
-For browser viewer changes, the baseline checks are:
-
-```sh
-npm ci
-npm run build
+Here A and R denote the unions of their respective body collections.
 ```
 
-The confirmed local v1.0.3 build on Kubuntu succeeded on 20261111, with zero reported npm audit vulnerabilities and a non-blocking bundle-size warning. This is **not** a substitute for automated regression tests.
+The accepted principal-prism recognition rule is restricted to a source-local +Z extrusion with a rectangular XY section. Neither the decomposition nor a successful reconstruction establishes the original construction history, unique family interpretation, mould design or manufacturing sequence.
 
-`tsconfig.tsbuildinfo` is a generated TypeScript build artifact currently tracked on `main`; removing it from tracking and adding `*.tsbuildinfo` to `.gitignore` requires a separate approved housekeeping change. Do not mix that change into an unrelated geometry milestone without agreement.
+Use the established `1e-7 mm` Boolean/classification tolerance and `1 mm³` absolute reconstruction-volume comparison for the qualified GEO-03/GEO-Export scope. Volume agreement alone is insufficient: require empty directed solid residuals and complete bidirectional bounded-face coverage. Do not discard positive-volume residuals or enlarge tolerances silently. Any new operation must have an explicitly agreed numerical policy.
 
-## Response header, numbering, and RIC convention
+### Native persistence and inspection
 
-For substantive **conversational responses** by an assistant or coding agent, use the header:
+- Preserve `smd_geometry::ExportBodies` (`S`, `B`, `A[]`, `R[]`) and the existing `exportBrep()` / `importBrep()` interface.
+- GEO-Export uses one version-1 JSON file per element containing OCCT ASCII BREP `VERSION_3` solids, without cached presentation meshes or normals. It preserves processed geometry, not the complete original source evidence or its provenance.
+- Exporters and downstream engineering modules must remain independent of viewer selections and display geometry. Existing viewers remain functional; native session tags are transient annotations.
+- The operational default export directory is repository-root `exports/`, excluded from ordinary Git staging and the browser production asset tree. This is not a filesystem security boundary. Libraries receive explicit destinations; preserve existing output files on failure.
+
+See [GEO-EXPORT.md](docs/GEO-EXPORT.md) and [libgeometry/README.md](libgeometry/README.md) for the qualified specimens, API, build instructions and outstanding platform limitations. GEO-Export Windows/MSVC qualification remains outstanding at this baseline. Additional specimens in the repository are not automatically qualified.
+
+## 3. Accepted development roadmap — revised 20261127
+
+The next development objective is a reusable parametric engineering model, not another representation of final solid geometry.
+
+Use consecutive short GEO milestone identifiers for the next geometric stages. GEO-IFC and REINF are distinct downstream development streams.
+
+| Milestone | Objective | Status |
+| --- | --- | --- |
+| GEO-04 | Family.Type contract, column classification and rectangular principal body `B` | Architecture accepted; next |
+| GEO-05 | Parametric interpretation of additions `A[]` and reductions `R[]`; investigate haunched corbels and tapered pockets | Planned |
+| GEO-06 | Complete parametric regeneration and geometric qualification against `S` | Planned |
+| GEO-IFC | Parametric IFC exchange | Planned, following parametric qualification |
+| REINF | Independent headless parametric reinforcement modules | Future |
+
+The roadmap and GEO-04 architectural decisions are agreed. They do not authorize implementation or settle detailed APIs, algorithms, dependencies or milestone acceptance criteria beyond the explicit decisions below.
+
+### GEO-04 — accepted architectural decisions (20261127)
+
+GEO-04 establishes the internal parametric engineering contract and its first qualified geometric family. It consumes the accepted GEO-03A result; it does not replace or extend the existing recognition rule.
+
+| Decision | Accepted requirement |
+| --- | --- |
+| GEO-04-D01 | Separate geometric family, constructive role (principal/addition/reduction) and engineering classification. Reuse geometry families across roles. Permit future nonrectangular families, including corbels with an inclined underside (*Schmiege*), without implementing them now. |
+| GEO-04-D02 | Implement only `RectangularPrism` in GEO-04. |
+| GEO-04-D03 | Use section-centred canonical coordinates: origin at the centre of the starting section; longitudinal axis +Z; source-aligned orientation for GEO-04. Preserve the translation to source-local coordinates. |
+| GEO-04-D04 | Extract parameters from the existing `PrincipalPrismCandidate`; do not duplicate principal-prism recognition. Do not change `ExportBodies` or its JSON/BREP contract. Recognition from independently supplied solids is deferred. |
+| GEO-04-D05 | Use strongly typed, dependency-free C++20 parameter structures, independent of OCCT, SMD parsing, IFC and presentation technology. |
+| GEO-04-D06 | Preserve recovered dimensions without nominal rounding. Defer automatic type consolidation, nominal catalogue matching and persistent type administration. |
+| GEO-04-D07 | Establish an independent `libparametric/` module with a dependency-free parameter contract and an OCCT-dependent adapter for extraction, regeneration and qualification. Preserve existing module interfaces and make the new build optional. |
+| GEO-04-D08 | Regenerate `B` from parameters alone; independently qualify the regenerated solid against the accepted reference `B`, including validity, placement, volume, empty directed solid residuals and complete bidirectional bounded-face coverage. Preserve inputs. |
+| GEO-04-D09 | The project-owner-confirmed filename prefixes `COL` (Column) and `ST` (Stütze) identify columns. Keep filename-based engineering classification separate from geometric recognition; unrecognized names remain unclassified. Do not infer feature counts or other semantics from the remaining filename. |
+| GEO-04-D10 | Cross-sectional dimensions are type parameters; extrusion length and placement are instance parameters. |
+
+For `RectangularPrism`, the canonical domain in millimetres is `-bx/2 <= x <= bx/2`, `-by/2 <= y <= by/2`, `0 <= z <= L`. The type defines `bx, by`; the instance defines `L` and the canonical origin in source-local coordinates. The initial orientation is identity. Recover the origin from the XY midpoint and minimum Z of the GEO-03A candidate; do not apply recorded STRAKON transformations. Preserve non-nominal dimensions and offsets.
+
+Store type parameters by value initially. No central family/type catalogue, deduplication, persistence scheme or Revit integration is required or authorized in GEO-04. A future, separate import-mapping module shall assign the appropriate internal Family.Type from the existing Revit family; its mapping rules, interface and technology remain deferred.
+
+GEO-04 qualification compares regenerated `B` with reference `B`, not `S`. Use the established `1e-7 mm` Boolean tolerance and `1 mm³` absolute volume comparison; volume alone is insufficient. Verify independent generation after deliberate parameter changes, reject invalid or inconsistent inputs, and preserve the accepted geometry pipeline and all prior regressions. Exact APIs, diagnostics, prefix matching details and the test matrix are to be specified in the focused implementation assignment. Do not treat architectural acceptance as implementation authorization.
+
+### GEO-05 and GEO-06 — subsequent parametric processing
+
+- Extend the internal model to individually identifiable additive and subtractive features, with explicit feature-local placements relative to the principal body. Reuse geometric families rather than duplicating construction algorithms by role. Investigate haunched corbels (*Schmiege*) and tapered reductions when supported by geometric evidence; do not presume a unique engineering interpretation or subdivide a feature merely for geometric convenience.
+- Establish supported family parameterizations for `A[]` and `R[]` and qualify each regenerated constituent against its corresponding reference body. Explicitly reject unsupported or ambiguous parameterizations; do not substitute B-rep geometry for missing parameters.
+- GEO-06 assembles the complete parametric element and independently verifies its reconstructed solid against `S`, retaining the established numerical qualification policy. Keep the internal model reusable by IFC and reinforcement without either becoming a dependency of parametric processing.
+- Detailed family definitions, feature recognition, orientation handling, identities, complete-element interfaces and acceptance criteria require separate agreement in the corresponding milestone.
+
+### GEO-IFC — external parametric BIM exchange
+
+- **GEO-IFC-D01 accepted:** IFC4 ADD2 TC1, STEP physical file format (IFC-SPF). Other schemas are deferred. Do not claim MVD compliance without qualification.
+- Export the parametric principal body and identifiable additive/subtractive features, preserving their parameters, type/occurrence relationships and placements. B-rep and tessellated production representations or fallbacks are excluded from this development objective.
+- Investigate parameterized profiles, swept solids, type assignment, additive/subtractive IFC feature relationships and constructive Boolean alternatives. Their precise mapping and receiving-application support remain open. Derived bodies must not be counted as separate physical precast elements or as duplicate material.
+- Preserve source-local millimetres; no unverified project placements, material properties or manufacturing semantics. The semantic context, spatial scaffold and GUID policy require detailed agreement.
+- Keep IFC serialization separate from parametric recognition and native JSON/BREP persistence. Investigate an IfcOpenShell entity-only build versus a restricted native writer; no technology has been selected. Do not compromise the accepted OCCT baseline to accommodate an IFC dependency.
+- Qualify schema, entity semantics, parameters, feature relationships and independent geometric reconstruction. Test actual interoperability with selected applications; rendering alone is insufficient.
+
+### REINF — independent engineering processing
+
+Develop our own headless parametric reinforcement modules consuming the internal parametric element model. IFC is an intermediate development deliverable and a useful external interface, **not** a required input, internal data format or runtime dependency of reinforcement processing. Third-party reinforcement generation is not a GEO-IFC acceptance requirement. Reinforcement rules, engineering design criteria and their qualification are separate future tasks.
+
+```text
+Source SMD -> GEO-00/01/02 -> S -> GEO-03 -> S, B, A[], R[]
+                                                     |
+                         +---------------------------+------------------+
+                         |                           |                  |
+                     Inspection                 GEO-Export      GEO-04/05/06
+                                                  JSON/BREP            |
+                                                              Parametric model
+                                                                 /         \
+                                                             GEO-IFC      REINF
+                                                                |           |
+                                                               IFC    Reinforcement
+```
+
+Native geometry persistence, inspection and the two downstream engineering streams remain independently usable within their respective accepted contracts.
+
+## 4. Development, build and verification procedure
+
+- Discuss requirements -> agree architecture and acceptance criteria -> issue a focused Codex assignment -> implement and test -> independently review -> authorize integration -> close the milestone.
+- Record architectural decisions explicitly. For multi-milestone work, maintain an agreed working ledger and consolidate the permanent acceptance record in `docs/` at closure. Do not reopen completed stages implicitly.
+- Primary environment: Kubuntu/Linux, GCC, C++20 and OCCT 8.0.1. Windows/MSVC is a supplementary target. Pin actual dependency versions, architecture, compiler, runtime and build configuration for each task. Qt is needed only for native viewer work.
+- Preserve the default parser-only build and independent WASM path; native geometry and viewer builds remain opt-in. Optional parametric and future IFC dependencies must not leak into builds where the corresponding modules are disabled. No implicit dependency downloads.
+- Use focused CTests and relevant fresh build configurations; preserve existing assertions and reference fixture bytes (including LF line endings). Distinguish test counts, automated smoke tests and manual operator acceptance. Document outstanding checks rather than claiming them complete.
+- For browser viewer changes, run `npm ci` and `npm run build` in addition to relevant regressions. Do not mix generated-file housekeeping or unrelated repository changes into engineering tasks.
+- Consult the milestone references for detailed commands, specimen lists, regression evidence and limitations; avoid maintaining duplicate historical test matrices here.
+
+## 5. Response header, numbering and RIC convention
+
+For substantive conversational responses by an assistant or coding agent, use:
 
 ```text
 N // YYYY.MM.DD - HH:MM // RIC NN% (IST)
 ```
 
-- `N`: consecutive answer number **within the current conversation**; restart at 1 in a new conversation.
-- Timestamp: actual local date and time in **Asia/Kolkata**, 24-hour format; do not invent a current time if it cannot be determined.
-- `RIC`: **Remaining Intellectual Capacity**, a *subjective context-continuity indicator*. It is a rough working estimate, **not** a measured model-resource counter, a token quota, or a probability of correctness. Do not claim precision that is unavailable.
-- Below an estimated 25%, include the warning **“Cognitive Sanity Warning: RIC below 25%. Further branching is unsafe.”** and propose a concise handover/snapshot into a fresh conversation.
-- This header convention does **not** apply to code, program output, commit messages, pull-request titles, tests, generated files, or other artifacts unless explicitly requested.
+- `N`: consecutive answer number within the current conversation; restart at 1 in a new conversation.
+- Timestamp: actual local date and time in Asia/Kolkata, 24-hour format; do not invent a time if it cannot be determined.
+- `RIC`: Remaining Intellectual Capacity, a subjective estimate of context continuity, not a measured resource counter, token quota or probability of correctness.
+- Below an estimated 25%, include **“Cognitive Sanity Warning: RIC below 25%. Further branching is unsafe.”** and propose a concise handover into a fresh conversation.
+- The header does not apply to code, program output, commit messages, PR titles, tests, generated files or other artifacts unless explicitly requested.
 
-## Task closure report
+## 6. Task closure report
 
-At the end of each authorized development task, report: task identifier, branch and commit; files changed; build/test commands and outcomes; verified behavior; limitations and unresolved questions; and decisions requiring team review. Stop at the agreed milestone boundary. No silent scope expansion.
+At the end of each authorized task, report the task identifier, branch and commit, files changed, build/test commands and results, verified behavior, limitations and unresolved questions, and decisions requiring team review. Stop at the agreed boundary. No silent scope expansion.
